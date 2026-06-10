@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Steel Rain - Vietnam '69</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
+  #gameCanvas { border: 2px solid #333; image-rendering: pixelated; }
+  #ui { color: #aaa; font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="480" height="720"></canvas>
+<div id="ui">WASD/Arrows: เคลื่อนที่ | Z/Space: ยิงกระสุน | X: ระเบิดทั้งฉาก (2 ลูก) | P: หยุด</div>
+<script src="game.js"></script>
+</body>
+</html>
