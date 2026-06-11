@@ -529,21 +529,55 @@ let nameCursor = 0;
 let nameConfirmed = false;
 let nameEntryFromClear = false; // true = mission clear, false = game over
 
-// Leaderboard (localStorage)
-function loadBoard() {
-  try { return JSON.parse(localStorage.getItem('sr69_board') || '[]'); } catch { return []; }
+// ========================
+// FIREBASE GLOBAL LEADERBOARD
+// ========================
+const FB_DB = 'https://steel-rain-8c8c2-default-rtdb.asia-southeast1.firebasedatabase.app';
+let boardCache = [];      // top 10 โหลดจาก Firebase
+let boardLoading = false; // แสดง "กำลังโหลด..."
+
+async function fetchBoard() {
+  boardLoading = true;
+  try {
+    const res = await fetch(`${FB_DB}/scores.json`);
+    const data = await res.json();
+    if (data && typeof data === 'object') {
+      boardCache = Object.values(data)
+        .filter(e => e && e.score != null)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+    } else {
+      boardCache = [];
+    }
+  } catch {
+    // fallback: ใช้ localStorage ถ้า Firebase ไม่ตอบสนอง
+    try { boardCache = JSON.parse(localStorage.getItem('sr69_board') || '[]'); } catch {}
+  }
+  boardLoading = false;
 }
-function saveBoard(board) {
-  try { localStorage.setItem('sr69_board', JSON.stringify(board)); } catch {}
+
+function loadBoard() { return boardCache; }
+
+async function addToBoard(name, sc, mission) {
+  const entry = { name, score: sc, mission, ts: Date.now() };
+  // Optimistic update: แสดงคะแนนตัวเองทันทีโดยไม่รอ Firebase
+  boardCache = [...boardCache, entry].sort((a, b) => b.score - a.score).slice(0, 10);
+  try {
+    await fetch(`${FB_DB}/scores.json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+    // Refresh จาก Firebase เพื่อดึงคะแนนคนอื่นด้วย
+    await fetchBoard();
+  } catch {
+    // Fallback: บันทึก localStorage ถ้า Firebase ล้มเหลว
+    localStorage.setItem('sr69_board', JSON.stringify(boardCache));
+  }
 }
-function addToBoard(name, sc, mission) {
-  const board = loadBoard();
-  board.push({ name, score: sc, mission });
-  board.sort((a, b) => b.score - a.score);
-  board.splice(5); // top 5
-  saveBoard(board);
-  return board;
-}
+
+// โหลด leaderboard ครั้งแรกตอนเปิดเกม
+fetchBoard();
 
 // HTML Share buttons (injected over canvas)
 let shareContainer = null;
@@ -1364,24 +1398,29 @@ function drawNameEntry() {
 
   ctx.fillStyle = '#f80';
   ctx.font = 'bold 9px monospace';
-  ctx.fillText('--- TOP 5 SCORES ---', W / 2 - 58, boardY);
+  ctx.fillText('-- 🌐 GLOBAL TOP 10 --', W / 2 - 62, boardY);
 
-  board.forEach((entry, idx) => {
-    const isMe = nameConfirmed && idx === 0 && entry.name === playerName.join('') && entry.score === score;
-    ctx.fillStyle = isMe ? '#ff8' : (idx === 0 ? '#ffd' : '#aaa');
-    ctx.font = isMe ? 'bold 9px monospace' : '9px monospace';
-    const rank = `${idx + 1}.`;
-    const nameStr = entry.name.padEnd(3);
-    const missionStr = `M${entry.mission}`;
-    const scoreStr = String(entry.score).padStart(6, ' ');
-    const line = `${rank} ${nameStr}  ${scoreStr}  ${missionStr}`;
-    ctx.fillText(line, W / 2 - 65, boardY + 14 + idx * 14);
-  });
-
-  if (board.length === 0) {
+  if (boardLoading) {
+    ctx.fillStyle = '#888';
+    ctx.font = '9px monospace';
+    ctx.fillText('กำลังโหลด...', W / 2 - 36, boardY + 20);
+  } else if (board.length === 0) {
     ctx.fillStyle = '#555';
     ctx.font = '9px monospace';
     ctx.fillText('ยังไม่มีคะแนน', W / 2 - 36, boardY + 20);
+  } else {
+    board.forEach((entry, idx) => {
+      const myName = playerName.join('');
+      const isMe = nameConfirmed && entry.name === myName && entry.score === score;
+      ctx.fillStyle = isMe ? '#ff8' : (idx === 0 ? '#ffd' : '#aaa');
+      ctx.font = isMe ? 'bold 9px monospace' : '9px monospace';
+      const rank = `${idx + 1}.`;
+      const nameStr = (entry.name || '???').padEnd(3);
+      const missionStr = `M${entry.mission || 1}`;
+      const scoreStr = String(entry.score).padStart(7, ' ');
+      const line = `${rank} ${nameStr}  ${scoreStr}  ${missionStr}`;
+      ctx.fillText(line, W / 2 - 68, boardY + 14 + idx * 13);
+    });
   }
 
   // After confirm: show keyboard prompt to retry
