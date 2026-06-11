@@ -241,6 +241,17 @@
 
 ---
 
+## [1.9.1] — 2026-06-11
+
+### 🚀 Deploy to GitHub Pages
+
+- สร้าง Git repository และ push ขึ้น GitHub
+- เปิดใช้งาน GitHub Pages จาก branch `main`
+- **Live URL:** https://somphongw-x10.github.io/steel-rain/
+- Remote: `git@github.com:somphongw-x10/steel-rain.git`
+
+---
+
 ## [Backlog / TODO]
 
 - [ ] Power-up drops จาก supply units (fuel, ammo, bomb refill)
