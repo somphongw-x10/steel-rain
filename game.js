@@ -564,13 +564,21 @@ function createShareButtons(name, sc) {
     zIndex: '100',
   });
 
-  const text = `🚁 Steel Rain Vietnam '69\nชื่อ: ${name} | คะแนน: ${sc}\nเล่นกันมั้ย?`;
-  const encodedText = encodeURIComponent(text);
+  const gameUrl  = 'https://somphongw-x10.github.io/steel-rain/';
+  const fbQuote  = `🚁 Steel Rain: Vietnam '69\n` +
+                   `ฉันเพิ่งทำคะแนน ${sc.toLocaleString()} คะแนน ในชื่อ ${name}!\n` +
+                   `มาลองดูว่าคุณจะทำได้มากกว่านี้ไหม? 🎮🔥`;
+  const lineText = `🚁 Steel Rain: Vietnam '69\n` +
+                   `${name} ทำได้ ${sc.toLocaleString()} คะแนน!\n` +
+                   `มาแข่งกันมั้ย? 👉 ${gameUrl}`;
 
   const fbBtn = document.createElement('button');
   fbBtn.textContent = '📘 Facebook';
   styleShareBtn(fbBtn, '#1877f2');
-  fbBtn.onclick = () => window.open(`https://www.facebook.com/sharer/sharer.php?quote=${encodedText}`, '_blank');
+  fbBtn.onclick = () => window.open(
+    `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(gameUrl)}&quote=${encodeURIComponent(fbQuote)}`,
+    '_blank'
+  );
 
   const lineBtn = document.createElement('button');
   lineBtn.textContent = '💬 LINE';
