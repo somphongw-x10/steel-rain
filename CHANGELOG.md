@@ -252,11 +252,100 @@
 
 ---
 
+## [1.9.2] — 2026-06-11
+
+### 📘 Facebook Share — คำเชิญ + คะแนน + OG Preview Card
+
+**Share Button:**
+- ข้อความ: ชื่อผู้เล่น + คะแนนล่าสุด + คำเชิญชวน + URL เกม
+- Facebook sharer รับ `quote=` parameter → แสดงข้อความในกล่อง share
+
+**Open Graph (OG) Tags (`index.html`):**
+- `og:title`, `og:description`, `og:image` (preview.png), `og:url`
+- `twitter:card = summary_large_image`
+- `preview.png` generate จาก canvas title screen (python3 base64 decode)
+
+---
+
+## [1.9.3] — 2026-06-11
+
+### 📊 Google Analytics
+
+- เพิ่ม Google tag `G-5LXLVZNEYE` ใน `index.html`
+- Track pageview และ event อัตโนมัติ
+
+---
+
+## [2.0.0] — 2026-06-12
+
+### 🌐 Firebase Global Leaderboard
+
+**เปลี่ยนจาก localStorage → Firebase Realtime Database:**
+- Endpoint: `https://steel-rain-8c8c2-default-rtdb.asia-southeast1.firebasedatabase.app/scores.json`
+- ใช้ REST API (GET/POST) — ไม่ต้องติดตั้ง Firebase SDK
+- Top 10 จากผู้เล่นทั่วโลก แทน Top 5 เฉพาะเครื่อง
+
+**Optimistic Update:**
+- อัป boardCache ทันทีหลังบันทึกชื่อ → ไม่ต้องรอ Firebase ตอบ
+- refresh จาก Firebase ในเบื้องหลัง → ดึงคะแนนคนอื่นเพิ่มเติม
+
+**Fallback:**
+- หาก Firebase ไม่ตอบสนอง → ใช้ localStorage แทน
+
+---
+
+## [2.1.0] — 2026-06-13
+
+### 🎁 Power-up System + Combo Chain
+
+**Power-up drops จากศัตรู:**
+| ไอเทม | สี | โอกาสดรอป | ผล |
+|---|---|---|---|
+| **P** (Power) | Cyan | 18% | เพิ่ม power level +1 |
+| **H** (HP) | แดง | 8% | ฟื้น HP +1 |
+| **B** (Bomb) | ส้ม | 6% | เติมระเบิด +1 |
+- บอสตาย: drop P + H แน่นอน
+- ไอเทม bob ขึ้นลง + glow effect + เลื่อนลงพร้อม terrain
+
+**Power Level 1–5 (เปลี่ยน shot pattern):**
+| Level | กระสุน | รูปแบบ |
+|---|---|---|
+| 1 | 2 | ตรง (เดิม) |
+| 2 | 3 | กลาง + 2 ข้าง |
+| 3 | 4 | spread เล็กน้อย |
+| 4 | 5 | spread กว้าง |
+| 5 | 5 | spread สุดพร้อม cooldown สั้นลง |
+- ตายแล้ว power กลับเป็น 1
+- แถบ **PWR** 5 ช่องสี cyan ใน HUD
+
+**Combo/Chain System:**
+- ฆ่าต่อเนื่องภายใน 3 วินาที → COMBO ×N แสดงกลางจอ
+- ทุก 3 kill เพิ่ม score multiplier: ×1 → ×2 → ×3...
+- Combo reset ถ้าไม่ kill ภายใน 3 วิ
+- สีข้อความเปลี่ยนตามระดับ combo (cyan → เหลือง → ส้ม)
+
+**Invincibility Frame (ยืนยัน):**
+- มีอยู่แล้ว: 1.5 วิหลังโดนยิง + กระพริบตัวละคร — ไม่ต้องเพิ่ม
+
+---
+
+## [2.1.1] — 2026-06-13
+
+### 🔫 R Key — Instant Reload
+
+- กด **R** ระหว่างเล่น → กระสุนเต็มทันที
+- reset heatTimer → reload ไม่รบกวน cycle ปกติ
+- เล่น `collect` SFX เมื่อ reload
+- อัปเดต hint ใน title screen และแถบ UI ด้านล่าง
+
+---
+
 ## [Backlog / TODO]
 
-- [ ] Power-up drops จาก supply units (fuel, ammo, bomb refill)
+- [ ] Screen shake + hit-stop (ข้อ 4 จาก design review)
+- [ ] Enemy bullet patterns ที่หลากหลาย (fan/spiral/burst)
+- [ ] บอสหลายชนิดต่อ mission
 - [ ] Destructible environment (พุ่มไม้ไหม้, กระท่อมพัง)
 - [ ] Mission briefing screen ก่อนเริ่มแต่ละ mission
-- [ ] High score sync กับ server
 - [ ] Mobile touch controls
 - [ ] Port เป็น Godot 4.x GDScript
