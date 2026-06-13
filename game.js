@@ -521,6 +521,8 @@ let bombFlash = 0;
 let scrollY, mission, missionTimer, bossSpawned, boss;
 let keys = {}, lastTime = 0, terrain;
 let enemyTimer = 0;
+let items = [];
+let comboCount = 0, comboTimer = 0, comboDisplay = 0;
 
 // Name entry
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -650,10 +652,12 @@ function initGame() {
     speed: 120, hp: 5, maxHp: 5,
     ammo: 60, maxAmmo: 60, bombs: 2, maxBombs: 2,
     shootCooldown: 0, bombCooldown: 0, invincible: 0, heatTimer: 0,
+    powerLevel: 1,
   };
-  bullets = []; enemies = []; particles = []; wreckages = [];
+  bullets = []; enemies = []; particles = []; wreckages = []; items = [];
   bombFlash = 0;
   enemyTimer = 0;
+  comboCount = 0; comboTimer = 0; comboDisplay = 0;
 }
 
 // ========================
@@ -753,11 +757,37 @@ function spawnBoss() {
 // ========================
 function firePlayerBullet() {
   if (player.ammo <= 0 || player.shootCooldown > 0) return;
+  const pl = player.powerLevel;
   player.ammo--;
-  player.shootCooldown = 0.1;
+  player.shootCooldown = pl >= 5 ? 0.08 : 0.1;
   playSfx('gun', 0.15);
-  bullets.push({ x: player.x + 5, y: player.y - 4, vy: -420, owner: 'player', w: 2, h: 7 });
-  bullets.push({ x: player.x + 11, y: player.y - 4, vy: -420, owner: 'player', w: 2, h: 7 });
+  const cx = player.x + player.w / 2;
+  const by = player.y - 4;
+  if (pl === 1) {
+    bullets.push({ x: cx - 4, y: by, vy: -420, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx + 2, y: by, vy: -420, owner: 'player', w: 2, h: 7 });
+  } else if (pl === 2) {
+    bullets.push({ x: cx - 5, y: by, vy: -420, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx,     y: by - 2, vy: -420, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx + 3, y: by, vy: -420, owner: 'player', w: 2, h: 7 });
+  } else if (pl === 3) {
+    bullets.push({ x: cx - 6, y: by, vx: -40, vy: -420, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx - 2, y: by - 2, vy: -430, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx + 2, y: by - 2, vy: -430, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx + 6, y: by, vx:  40, vy: -420, owner: 'player', w: 2, h: 7 });
+  } else if (pl === 4) {
+    bullets.push({ x: cx - 8, y: by, vx: -80, vy: -400, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx - 4, y: by - 2, vx: -25, vy: -430, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx,     y: by - 4, vy: -440, owner: 'player', w: 3, h: 9 });
+    bullets.push({ x: cx + 4, y: by - 2, vx:  25, vy: -430, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx + 8, y: by, vx:  80, vy: -400, owner: 'player', w: 2, h: 7 });
+  } else {
+    bullets.push({ x: cx - 9, y: by, vx: -110, vy: -390, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx - 4, y: by - 2, vx:  -30, vy: -440, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx,     y: by - 5, vy: -460, owner: 'player', w: 3, h: 10 });
+    bullets.push({ x: cx + 4, y: by - 2, vx:   30, vy: -440, owner: 'player', w: 2, h: 7 });
+    bullets.push({ x: cx + 9, y: by, vx:  110, vy: -390, owner: 'player', w: 2, h: 7 });
+  }
 }
 function dropBomb() {
   if (player.bombs <= 0 || player.bombCooldown > 0) return;
@@ -912,6 +942,7 @@ function update(dt) {
         spawnParticle(player.x + 8, player.y + 7, '#ff0000', 10);
         bullets.splice(i, 1);
         if (player.hp <= 0) {
+          player.powerLevel = 1;
           stopHeliLoop();
           playSfx('heli_stop');
           if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
@@ -957,7 +988,18 @@ function update(dt) {
       spawnWreckage(e);
       spawnParticle(e.x + e.w / 2, e.y + e.h / 2, '#ff6600', 10);
       playSfx(Math.random() < 0.5 ? 'enemy_die1' : 'enemy_die2', 0.25);
-      score += e.points;
+      // Combo
+      comboCount++;
+      comboTimer = 3.0;
+      comboDisplay = 1.4;
+      const mult = 1 + Math.floor(comboCount / 3);
+      score += e.points * mult;
+      // Item drop
+      const drop = Math.random();
+      const ix = e.x + e.w / 2 - 6, iy = e.y + e.h / 2;
+      if (drop < 0.18)       items.push({ type: 'P', x: ix, y: iy, w: 12, h: 12, timer: 7 });
+      else if (drop < 0.26)  items.push({ type: 'H', x: ix, y: iy, w: 12, h: 12, timer: 7 });
+      else if (drop < 0.32)  items.push({ type: 'B', x: ix, y: iy, w: 12, h: 12, timer: 7 });
       enemies.splice(i, 1);
     }
   }
@@ -987,6 +1029,9 @@ function update(dt) {
       playSfx('enemy_die1', 0);
       playSfx('enemy_die2', 0);
       score += boss.points;
+      // Boss drop: guaranteed power + random HP
+      items.push({ type: 'P', x: boss.x + boss.w/2 - 6, y: boss.y + boss.h/2, w: 12, h: 12, timer: 10 });
+      items.push({ type: 'H', x: boss.x + boss.w/2 + 8, y: boss.y + boss.h/2, w: 12, h: 12, timer: 10 });
       boss = null; bossSpawned = false;
       mission++;
       missionTimer = 0;
@@ -1007,6 +1052,31 @@ function update(dt) {
       boss.phase = 1; boss.speed = 80;
     }
   }
+
+  // Items (power-ups)
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    it.y += SCROLL_SPEED * dt;
+    it.timer -= dt;
+    if (overlap(it, { x: player.x, y: player.y, w: player.w, h: player.h }, 5)) {
+      if (it.type === 'P') player.powerLevel = Math.min(5, player.powerLevel + 1);
+      else if (it.type === 'H') player.hp = Math.min(player.maxHp, player.hp + 1);
+      else if (it.type === 'B') player.bombs = Math.min(player.maxBombs, player.bombs + 1);
+      playSfx('collect', 0.2);
+      const col = it.type === 'P' ? '#0ff' : it.type === 'H' ? '#f44' : '#f80';
+      spawnParticle(it.x + 6, it.y + 6, col, 8);
+      items.splice(i, 1);
+      continue;
+    }
+    if (it.y > H + 20 || it.timer <= 0) items.splice(i, 1);
+  }
+
+  // Combo timer decay
+  if (comboCount > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) comboCount = 0;
+  }
+  if (comboDisplay > 0) comboDisplay -= dt;
 
   // Wreckages
   for (let i = wreckages.length - 1; i >= 0; i--) {
@@ -1189,6 +1259,49 @@ function draw() {
     ctx.lineWidth = 1;
   }
 
+  // Items (power-ups) — draw before player
+  items.forEach((it, idx) => {
+    const bob = Math.sin(Date.now() * 0.006 + idx * 1.7) * 2;
+    const y = it.y + bob;
+    const colors = { P: '#0ff', H: '#f44', B: '#f80' };
+    const labels = { P: 'P', H: '♥', B: 'B' };
+    const col = colors[it.type];
+    ctx.save();
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(it.x, y, it.w, it.h);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(it.x, y, it.w, it.h);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = col;
+    ctx.font = 'bold 7px monospace';
+    const lbl = labels[it.type];
+    ctx.fillText(lbl, it.x + it.w/2 - ctx.measureText(lbl).width/2, y + it.h - 2);
+    ctx.restore();
+  });
+
+  // Combo display (mid-screen)
+  if (comboDisplay > 0 && comboCount >= 2) {
+    const alpha = Math.min(1, comboDisplay * 1.5);
+    const mult = 1 + Math.floor(comboCount / 3);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const comboCol = comboCount >= 9 ? '#f80' : comboCount >= 6 ? '#ff4' : '#0ff';
+    ctx.fillStyle = comboCol;
+    ctx.font = `bold ${Math.min(14, 9 + Math.floor(comboCount / 3))}px monospace`;
+    const txt = `COMBO ×${comboCount}`;
+    ctx.fillText(txt, W/2 - ctx.measureText(txt).width/2, H/2 - 16);
+    if (mult > 1) {
+      ctx.fillStyle = '#f80';
+      ctx.font = '8px monospace';
+      const mtxt = `×${mult} SCORE BONUS`;
+      ctx.fillText(mtxt, W/2 - ctx.measureText(mtxt).width/2, H/2 - 4);
+    }
+    ctx.restore();
+  }
+
   // Player helicopter
   const heliAlpha = (player.invincible <= 0 || Math.floor(player.invincible * 8) % 2 === 0) ? 1 : 0;
   if (heliAlpha > 0) {
@@ -1264,6 +1377,18 @@ function drawHUD() {
   ctx.fillStyle = '#8f8';
   ctx.font = '7px monospace';
   ctx.fillText(mnames[mission] || `MISSION ${mission}`, W - 75, H - 22);
+
+  // Power level indicator
+  ctx.fillStyle = '#0cc';
+  ctx.font = '7px monospace';
+  ctx.fillText('PWR', 146, H - 22);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i < player.powerLevel ? '#0ff' : '#1a2a2a';
+    ctx.fillRect(168 + i * 9, H - 29, 7, 6);
+    ctx.strokeStyle = i < player.powerLevel ? '#0cc' : '#223';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(168 + i * 9, H - 29, 7, 6);
+  }
 
   // Ammo reload warning
   if (player.ammo === 0) {
