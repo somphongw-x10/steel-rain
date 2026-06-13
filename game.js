@@ -523,6 +523,8 @@ let keys = {}, lastTime = 0, terrain;
 let enemyTimer = 0;
 let items = [];
 let comboCount = 0, comboTimer = 0, comboDisplay = 0;
+let screenShakeTrauma = 0;
+let hitStop = 0;
 
 // Name entry
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -658,6 +660,7 @@ function initGame() {
   bombFlash = 0;
   enemyTimer = 0;
   comboCount = 0; comboTimer = 0; comboDisplay = 0;
+  screenShakeTrauma = 0; hitStop = 0;
 }
 
 // ========================
@@ -679,6 +682,7 @@ function spawnWave(dt) {
       // เรือลาดตระเวน 1 ลำ
       const dir = Math.random() < 0.5 ? 1 : -1;
       const variant = Math.floor(Math.random() * 3) + 1;
+      const boatPattern = variant === 1 ? 'aimed' : variant === 2 ? 'fan3' : 'fan3';
       enemies.push({
         type: 'boat', variant,
         x: dir > 0 ? -60 : W + 10,
@@ -688,6 +692,7 @@ function spawnWave(dt) {
         speed: 55 + mission * 5, dir,
         shootTimer: 1 + Math.random(), shootRate: 1.4,
         points: 500, animOffset: Math.random() * 4 | 0,
+        pattern: boatPattern,
       });
     } else {
       // กลุ่มเรือ 2–3 ลำ
@@ -702,7 +707,7 @@ function spawnWave(dt) {
           hp: 3, maxHp: 3,
           speed: 58, dir,
           shootTimer: 1.5 + i * 0.4, shootRate: 1.8,
-          points: 400, animOffset: i,
+          points: 400, animOffset: i, pattern: 'aimed',
         });
       }
     }
@@ -720,11 +725,12 @@ function spawnWave(dt) {
         vx: 0,                          // velocity X (ไล่ตาม player)
         maxVx: 38 + mission * 4,        // ความเร็วสูงสุดแนวนอน
         shootTimer: 1.2 + Math.random(), shootRate: 1.6 - mission * 0.1,
-        points: 600,
+        points: 600, pattern: 'burst',
       });
     } else {
       // 🔫 ป้อมปืน AA — อยู่กับที่บนพื้น เลื่อนลงพร้อม terrain
       const variant = Math.floor(Math.random() * 3) + 1;
+      const cannonPattern = variant === 1 ? 'cone' : variant === 2 ? 'fan3' : 'fan5';
       enemies.push({
         type: 'cannon', variant,
         x: 20 + Math.random() * (W - 80),
@@ -732,7 +738,7 @@ function spawnWave(dt) {
         w: 40, h: 40,
         hp: 3 + mission, maxHp: 3 + mission,
         shootTimer: 0.8 + Math.random(), shootRate: 1.3 - mission * 0.1,
-        points: 300,
+        points: 300, pattern: cannonPattern,
         // cannon ไม่มี speed — เลื่อนพร้อมพื้นดิน
       });
     }
@@ -794,8 +800,9 @@ function dropBomb() {
   player.bombs--;
   player.bombCooldown = 1.2;
 
-  // Screen flash
+  // Screen flash + shake
   bombFlash = 1.0;
+  addTrauma(0.85);
 
   // Kill ALL enemies on screen
   for (let i = enemies.length - 1; i >= 0; i--) {
@@ -838,15 +845,51 @@ function dropBomb() {
   setTimeout(() => playSfx('rocket', 0), 200);
 }
 function fireEnemyBullet(e) {
-  const dx = player.x + 8 - (e.x + e.w / 2);
-  const dy = player.y + 7 - (e.y + e.h / 2);
+  const cx = e.x + e.w / 2, cy = e.y + e.h * 0.7;
+  const dx = player.x + 8 - cx;
+  const dy = player.y + 7 - cy;
   const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ndx = dx / dist, ndy = dy / dist;
   const speed = 160 + mission * 10;
-  bullets.push({
-    x: e.x + e.w / 2, y: e.y + e.h * 0.7,
-    vx: (dx / dist) * speed, vy: (dy / dist) * speed,
-    owner: 'enemy', w: 4, h: 4,
-  });
+  const pattern = e.pattern || 'aimed';
+
+  const push = (vx, vy, sz = 4) =>
+    bullets.push({ x: cx, y: cy, vx, vy, owner: 'enemy', w: sz, h: sz });
+
+  const rot = (nx, ny, a) => {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [nx * c - ny * s, nx * s + ny * c];
+  };
+
+  if (pattern === 'aimed') {
+    push(ndx * speed, ndy * speed);
+  } else if (pattern === 'fan3') {
+    // 3-shot fan cone toward player
+    for (const a of [-0.38, 0, 0.38]) {
+      const [rx, ry] = rot(ndx, ndy, a);
+      push(rx * speed, ry * speed);
+    }
+  } else if (pattern === 'fan5') {
+    // 5-shot wide fan
+    for (const a of [-0.65, -0.3, 0, 0.3, 0.65]) {
+      const [rx, ry] = rot(ndx, ndy, a);
+      push(rx * (speed * 0.85), ry * (speed * 0.85));
+    }
+  } else if (pattern === 'burst') {
+    // 2-shot quick burst (slight spread)
+    push(ndx * speed - 12, ndy * speed);
+    push(ndx * speed + 12, ndy * speed);
+  } else if (pattern === 'cone') {
+    // 3-shot downward cone (cannon)
+    for (const a of [-0.5, 0, 0.5]) {
+      const [rx, ry] = rot(ndx, ndy, a);
+      push(rx * speed * 0.8, ry * speed * 0.8);
+    }
+  }
+}
+
+function addTrauma(amount) {
+  screenShakeTrauma = Math.min(1, screenShakeTrauma + amount);
 }
 
 function spawnParticle(x, y, color, count = 6) {
@@ -895,10 +938,11 @@ function update(dt) {
   if ((keys['ArrowUp'] || keys['w']) && player.y > 20) player.y -= player.speed * dt;
   if ((keys['ArrowDown'] || keys['s']) && player.y + player.h < H - 10) player.y += player.speed * dt;
 
-  player.shootCooldown = Math.max(0, player.shootCooldown - dt);
-  player.bombCooldown  = Math.max(0, player.bombCooldown - dt);
-  player.invincible    = Math.max(0, player.invincible - dt);
-  bombFlash            = Math.max(0, bombFlash - dt * 4);
+  player.shootCooldown   = Math.max(0, player.shootCooldown - dt);
+  player.bombCooldown    = Math.max(0, player.bombCooldown - dt);
+  player.invincible      = Math.max(0, player.invincible - dt);
+  bombFlash              = Math.max(0, bombFlash - dt * 4);
+  screenShakeTrauma      = Math.max(0, screenShakeTrauma - dt * 2.8);
   tickHeliAnim(dt);
 
   if (keys['z'] || keys[' ']) firePlayerBullet();
@@ -927,12 +971,15 @@ function update(dt) {
       for (const e of enemies) {
         if (overlap(b, { x: e.x, y: e.y, w: e.w, h: e.h }, 4)) {
           e.hp--;
+          e.flashTimer = 0.08;
           spawnParticle(b.x, b.y, '#ff8800', 2);
           hit = true; break;
         }
       }
       if (!hit && boss && overlap(b, { x: boss.x, y: boss.y, w: boss.w, h: boss.h }, 6)) {
         boss.hp--;
+        boss.flashTimer = (boss.flashTimer || 0) + 0.06;
+        addTrauma(0.12);
         spawnParticle(b.x, b.y, '#ff4400', 2);
         hit = true;
       }
@@ -943,6 +990,7 @@ function update(dt) {
       if (overlap(b, { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 6 })) {
         player.hp--;
         player.invincible = 1.5;
+        addTrauma(0.35);
         playSfx('player_hit', 0.2);
         spawnParticle(player.x + 8, player.y + 7, '#ff0000', 10);
         bullets.splice(i, 1);
@@ -986,6 +1034,7 @@ function update(dt) {
       e.y += SCROLL_SPEED * dt;
     }
 
+    if (e.flashTimer > 0) e.flashTimer -= dt;
     e.shootTimer -= dt;
     if (e.shootTimer <= 0) { e.shootTimer = e.shootRate; fireEnemyBullet(e); }
     if (e.y > H + 60) { enemies.splice(i, 1); continue; }
@@ -993,6 +1042,7 @@ function update(dt) {
       spawnWreckage(e);
       spawnParticle(e.x + e.w / 2, e.y + e.h / 2, '#ff6600', 10);
       playSfx(Math.random() < 0.5 ? 'enemy_die1' : 'enemy_die2', 0.25);
+      addTrauma(0.1);
       // Combo
       comboCount++;
       comboTimer = 3.0;
@@ -1033,6 +1083,8 @@ function update(dt) {
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, '#ffaa00', 16);
       playSfx('enemy_die1', 0);
       playSfx('enemy_die2', 0);
+      addTrauma(1.0);
+      hitStop = 0.09;
       score += boss.points;
       // Boss drop: guaranteed power + random HP
       items.push({ type: 'P', x: boss.x + boss.w/2 - 6, y: boss.y + boss.h/2, w: 12, h: 12, timer: 10 });
@@ -1106,6 +1158,13 @@ function draw() {
   ctx.clearRect(0, 0, W, H);
   if (state === STATE.TITLE) { drawTitle(); return; }
   if (state === STATE.NAME_ENTRY) { drawNameEntry(); return; }
+
+  // Screen shake transform (world only — HUD stays fixed)
+  const shakeAmt = screenShakeTrauma * screenShakeTrauma;
+  const shX = (Math.random() * 2 - 1) * shakeAmt * 8;
+  const shY = (Math.random() * 2 - 1) * shakeAmt * 8;
+  ctx.save();
+  ctx.translate(shX, shY);
 
   // Terrain
   terrain.draw(scrollY);
@@ -1196,6 +1255,12 @@ function draw() {
       ctx.restore();
     }
 
+    // Damage flash (white overlay when hit)
+    if (e.flashTimer > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.85, e.flashTimer * 11)})`;
+      ctx.fillRect(e.x, e.y, e.w, e.h);
+    }
+
     // HP bar for multi-hp enemies
     if (e.maxHp > 1) {
       ctx.fillStyle = '#111';
@@ -1229,6 +1294,12 @@ function draw() {
     ctx.strokeStyle = '#f44';
     ctx.lineWidth = 1;
     ctx.strokeRect(10, 10, W - 20, 8);
+    // Boss damage flash
+    if (boss.flashTimer > 0) {
+      boss.flashTimer = Math.max(0, boss.flashTimer - 0.016);
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, boss.flashTimer * 8)})`;
+      ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
+    }
     ctx.fillStyle = '#fff';
     ctx.font = '8px monospace';
     const bossNames = ['', 'ARMORED GUNBOAT', 'MONITOR WARSHIP', 'RIVER FORTRESS'];
@@ -1322,6 +1393,8 @@ function draw() {
     drawSprite(`fire1_${ff}`, p.x - 16, p.y - 16, 32, 32);
     ctx.globalAlpha = 1;
   });
+
+  ctx.restore(); // end screen shake — HUD drawn in stable space
 
   drawHUD();
 
@@ -1622,7 +1695,11 @@ document.addEventListener('keyup', e => { keys[e.key] = false; });
 function frame(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
-  update(dt);
+  if (hitStop > 0) {
+    hitStop -= dt;
+  } else {
+    update(dt);
+  }
   draw();
   requestAnimationFrame(frame);
 }
