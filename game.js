@@ -903,6 +903,11 @@ function update(dt) {
 
   if (keys['z'] || keys[' ']) firePlayerBullet();
   if (keys['x']) dropBomb();
+  if (keys['r'] && player.ammo < player.maxAmmo) {
+    player.ammo = player.maxAmmo;
+    player.heatTimer = 0;
+    playSfx('collect', 0.3);
+  }
 
   // Slow ammo regen
   if (player.ammo < player.maxAmmo) {
@@ -1435,7 +1440,7 @@ function drawTitle() {
 
   ctx.fillStyle = '#888';
   ctx.font = '8px monospace';
-  ctx.fillText('WASD: Move   Z/SPACE: Gun   X: BOMB x2', W / 2 - 80, 320);
+  ctx.fillText('WASD: Move   Z/SPACE: Gun   X: BOMB   R: Reload', W / 2 - 96, 320);
   ctx.fillText('P: Pause', W / 2 - 24, 336);
 
   ctx.fillStyle = '#4a6';
