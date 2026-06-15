@@ -1192,52 +1192,40 @@ function draw() {
 
   // Enemies
   enemies.forEach(e => {
+    // Damage flash: brighten the sprite itself (follows sprite shape, not a rect)
+    const flashB = e.flashTimer > 0 ? 1 + Math.min(0.9, e.flashTimer * 11) * 10 : 1;
+    if (flashB > 1) ctx.filter = `brightness(${flashB})`;
+
     if (e.type === 'boat') {
       const f = (boatFrame() + (e.animOffset || 0)) % 4 + 1;
       const key = `boat${e.variant || 1}_${f}`;
       const flipX = e.dir < 0;
       const drawn = drawSprite(key, e.x, e.y, e.w, e.h, flipX);
       if (!drawn) {
-        // Fallback: colored rect with shadow
         ctx.fillStyle = '#4a6a30';
         ctx.fillRect(e.x + 4, e.y + 4, e.w - 8, e.h - 8);
       }
     } else if (e.type === 'tank') {
-      // 🪖 รถถัง: hull + gun turret แยกกัน
       const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-
-      // Hull หันตามทิศที่วิ่งจริง (vx, SCROLL_SPEED)
-      // atan2(vx, -vy): sprite หน้าชี้ขึ้น (north) → หมุนให้หน้าชี้ทิศที่วิ่ง
       const hullAngle = Math.atan2(e.vx || 0, -SCROLL_SPEED);
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(hullAngle);
-      if (tankHullCanvas) {
-        ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2, e.w, e.h);
-      } else {
-        ctx.fillStyle = '#3a5c2a';
-        ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h);
-      }
+      if (tankHullCanvas) ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2, e.w, e.h);
+      else { ctx.fillStyle = '#3a5c2a'; ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h); }
       ctx.restore();
 
-      // Gun turret: sprite หน้าชี้ขึ้น (north) → หมุนหน้าชี้ player
-      // atan2(dx, -dy): เมื่อ player อยู่ใต้ (dy>0) → rotate π → barrel ชี้ลง ✓
       const gdx = player.x - cx, gdy = player.y - cy;
       const gunAngle = Math.atan2(gdx, -gdy);
       const gw = e.w * 0.38, gh = e.h * 0.85;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(gunAngle);
-      if (tankGunCanvas) {
-        ctx.drawImage(tankGunCanvas, -gw / 2, -gh * 0.65, gw, gh);
-      } else {
-        ctx.fillStyle = '#2a3d1e';
-        ctx.fillRect(-gw/2, -gh*0.65, gw, gh);
-      }
+      if (tankGunCanvas) ctx.drawImage(tankGunCanvas, -gw / 2, -gh * 0.65, gw, gh);
+      else { ctx.fillStyle = '#2a3d1e'; ctx.fillRect(-gw/2, -gh*0.65, gw, gh); }
       ctx.restore();
 
     } else if (e.type === 'cannon') {
-      // 🔫 ป้อมปืน AA: หมุนชี้ player เหมือนเดิม
       const dx = player.x - (e.x + e.w/2);
       const dy = player.y - (e.y + e.h/2);
       const angle = Math.atan2(dy, dx) - Math.PI / 2;
@@ -1246,20 +1234,12 @@ function draw() {
       ctx.translate(e.x + e.w / 2, e.y + e.h / 2);
       ctx.rotate(angle);
       const img = imgs[key];
-      if (img && img.complete && img.naturalWidth) {
-        ctx.drawImage(img, -e.w / 2, -e.h / 2, e.w, e.h);
-      } else {
-        ctx.fillStyle = '#555';
-        ctx.fillRect(-e.w / 2, -e.h / 2, e.w, e.h);
-      }
+      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, -e.w / 2, -e.h / 2, e.w, e.h);
+      else { ctx.fillStyle = '#555'; ctx.fillRect(-e.w / 2, -e.h / 2, e.w, e.h); }
       ctx.restore();
     }
 
-    // Damage flash (white overlay when hit)
-    if (e.flashTimer > 0) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.85, e.flashTimer * 11)})`;
-      ctx.fillRect(e.x, e.y, e.w, e.h);
-    }
+    if (flashB > 1) ctx.filter = 'none';
 
     // HP bar for multi-hp enemies
     if (e.maxHp > 1) {
@@ -1274,12 +1254,14 @@ function draw() {
   // Boss
   if (boss) {
     const f = boatFrame();
-    // Try boss_boat sprite (boat4 = biggest)
+    const bossFlashB = boss.flashTimer > 0 ? 1 + Math.min(0.9, boss.flashTimer * 9) * 8 : 1;
+    if (bossFlashB > 1) ctx.filter = `brightness(${bossFlashB})`;
     const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h);
     if (!drawn) {
       ctx.fillStyle = '#5a3a1a';
       ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
     }
+    if (bossFlashB > 1) { ctx.filter = 'none'; boss.flashTimer = Math.max(0, boss.flashTimer - 0.016); }
     // Fire from damaged boss (phase 1)
     if (boss.phase === 1) {
       const ff = fireFrame();
@@ -1294,12 +1276,6 @@ function draw() {
     ctx.strokeStyle = '#f44';
     ctx.lineWidth = 1;
     ctx.strokeRect(10, 10, W - 20, 8);
-    // Boss damage flash
-    if (boss.flashTimer > 0) {
-      boss.flashTimer = Math.max(0, boss.flashTimer - 0.016);
-      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, boss.flashTimer * 8)})`;
-      ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
-    }
     ctx.fillStyle = '#fff';
     ctx.font = '8px monospace';
     const bossNames = ['', 'ARMORED GUNBOAT', 'MONITOR WARSHIP', 'RIVER FORTRESS'];
