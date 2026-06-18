@@ -602,7 +602,7 @@ function createShareButtons(name, sc) {
     zIndex: '100',
   });
 
-  const gameUrl  = 'https://somphongw-x10.github.io/steel-rain/';
+  const gameUrl  = 'https://game.no-os.com/';
   const fbQuote  = `🚁 Steel Rain: Vietnam '69\n` +
                    `ฉันเพิ่งทำคะแนน ${sc.toLocaleString()} คะแนน ในชื่อ ${name}!\n` +
                    `มาลองดูว่าคุณจะทำได้มากกว่านี้ไหม? 🎮🔥`;
