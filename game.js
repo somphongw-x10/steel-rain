@@ -1039,7 +1039,6 @@ function update(dt) {
           if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
           currentMusic = null;
           playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = false;
-          showGameOverAd();
           state = STATE.NAME_ENTRY;
         }
         continue;
@@ -1683,10 +1682,11 @@ document.addEventListener('keydown', e => {
         createShareButtons(name, score);
       }
     } else {
-      // After confirm: Enter = retry
+      // After confirm: Enter = show ad then retry
       if (e.key === 'Enter') {
         removeShareButtons();
-        initGame();
+        showGameOverAd();
+        setTimeout(() => initGame(), 300);
       }
     }
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
