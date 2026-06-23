@@ -4,33 +4,39 @@
 // ========================
 // GAMEMONETIZE SDK
 // ========================
-let gmSdk = null;
-let adReady = false;
+var gmSdk = null;
 
-window.addEventListener('load', () => {
-  if (typeof GameMonetize !== 'undefined') {
-    gmSdk = new GameMonetize({
-      gameId: '3r1ki0k435jc3j6dvoweeps7fvs0p8m8',
-      onEvent: function(event) {
-        switch (event.name) {
-          case 'SDK_READY':
-            adReady = true;
-            break;
-          case 'SDK_GAME_START':
-            // ad finished — resume game flow (already in NAME_ENTRY)
-            break;
-          case 'SDK_GAME_PAUSE':
-            break;
+(function initGM() {
+  function tryInit() {
+    if (typeof GameMonetize !== 'undefined') {
+      gmSdk = new GameMonetize({
+        gameId: '3r1ki0k435jc3j6dvoweeps7fvs0p8m8',
+        onEvent: function(event) {
+          if (event.name === 'SDK_GAME_PAUSE') {
+            // pause music while ad plays
+            if (currentMusic && music[currentMusic]) music[currentMusic].pause();
+          }
+          if (event.name === 'SDK_GAME_START') {
+            // resume music after ad
+            if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(()=>{});
+          }
         }
-      }
-    });
+      });
+    } else {
+      setTimeout(tryInit, 200);
+    }
   }
-});
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryInit);
+  } else {
+    tryInit();
+  }
+})();
 
 function showGameOverAd() {
-  if (gmSdk && adReady) {
-    gmSdk.showBanner();
-  }
+  try {
+    if (gmSdk) gmSdk.showBanner();
+  } catch(e) {}
 }
 
 const canvas = document.getElementById('gameCanvas');
