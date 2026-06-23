@@ -1,6 +1,38 @@
 // Steel Rain - Vietnam '69
 // Vertical Shoot 'em Up — uses real pixel art assets
 
+// ========================
+// GAMEMONETIZE SDK
+// ========================
+let gmSdk = null;
+let adReady = false;
+
+window.addEventListener('load', () => {
+  if (typeof GameMonetize !== 'undefined') {
+    gmSdk = new GameMonetize({
+      gameId: '3r1ki0k435jc3j6dvoweeps7fvs0p8m8',
+      onEvent: function(event) {
+        switch (event.name) {
+          case 'SDK_READY':
+            adReady = true;
+            break;
+          case 'SDK_GAME_START':
+            // ad finished — resume game flow (already in NAME_ENTRY)
+            break;
+          case 'SDK_GAME_PAUSE':
+            break;
+        }
+      }
+    });
+  }
+});
+
+function showGameOverAd() {
+  if (gmSdk && adReady) {
+    gmSdk.showBanner();
+  }
+}
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const W = 320, H = 480;
@@ -1001,6 +1033,7 @@ function update(dt) {
           if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
           currentMusic = null;
           playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = false;
+          showGameOverAd();
           state = STATE.NAME_ENTRY;
         }
         continue;
