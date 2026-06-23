@@ -9,20 +9,22 @@ var gmSdk = null;
 (function initGM() {
   function tryInit() {
     if (typeof GameMonetize !== 'undefined') {
+      console.log('[GM] GameMonetize found, initializing...');
       gmSdk = new GameMonetize({
         gameId: '3r1ki0k435jc3j6dvoweeps7fvs0p8m8',
         onEvent: function(event) {
+          console.log('[GM] event:', event.name);
           if (event.name === 'SDK_GAME_PAUSE') {
-            // pause music while ad plays
             if (currentMusic && music[currentMusic]) music[currentMusic].pause();
           }
           if (event.name === 'SDK_GAME_START') {
-            // resume music after ad
             if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(()=>{});
           }
         }
       });
+      console.log('[GM] SDK initialized:', gmSdk);
     } else {
+      console.log('[GM] GameMonetize not found, retrying...');
       setTimeout(tryInit, 200);
     }
   }
@@ -34,9 +36,17 @@ var gmSdk = null;
 })();
 
 function showGameOverAd() {
+  console.log('[GM] showGameOverAd called, gmSdk=', gmSdk);
   try {
-    if (gmSdk) gmSdk.showBanner();
-  } catch(e) {}
+    if (gmSdk) {
+      console.log('[GM] calling showBanner...');
+      gmSdk.showBanner();
+    } else {
+      console.log('[GM] SDK not ready');
+    }
+  } catch(e) {
+    console.error('[GM] error:', e);
+  }
 }
 
 const canvas = document.getElementById('gameCanvas');
