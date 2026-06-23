@@ -163,11 +163,13 @@ for (let f = 1; f <= 4; f++) {
   loadImg(`boat_s2_${f}`, `assets/PNG/Boats_color2/Boat_color2_${f}.png`);
   loadImg(`boat_s3_${f}`, `assets/PNG/Boats_color3/Boat_color3_${f}.png`);
 }
-// Cannons (4 rotation frames)
+// Cannons (cannon2 has 3 frames, others have 4)
 for (let f = 1; f <= 4; f++) {
   loadImg(`cannon1_${f}`, `assets/PNG/Cannon1_color1/Cannon1_color1_${f}.png`);
-  loadImg(`cannon2_${f}`, `assets/PNG/Cannon2_color1/Cannon2_color1_${f}.png`);
   loadImg(`cannon3_${f}`, `assets/PNG/Cannon3_color1/Cannon3_color1_${f}.png`);
+}
+for (let f = 1; f <= 3; f++) {
+  loadImg(`cannon2_${f}`, `assets/PNG/Cannon2_color1/Cannon2_color1_${f}.png`);
 }
 // Fire / Explosion (3 frames each)
 for (let t = 1; t <= 4; t++) {
