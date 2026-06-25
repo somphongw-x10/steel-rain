@@ -1,19 +1,34 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Steel Rain - Vietnam '69</title>
-<!-- Open Graph — Facebook / LINE preview card -->
-<meta property="og:title"       content="Steel Rain: Vietnam '69 🚁">
-<meta property="og:description" content="Vertical shoot 'em up — บิน AH-1 Cobra บุกป่าเวียดนาม ทำลายทุกอย่างที่ขวางหน้า!">
+<title>Steel Rain: Vietnam '69</title>
+<meta property="og:title"       content="Steel Rain: Vietnam '69">
+<meta property="og:description" content="Vertical shoot 'em up — Fly an AH-1 Cobra through Vietnam, destroy all enemies!">
 <meta property="og:image"       content="https://game.no-os.com/preview.png">
 <meta property="og:url"         content="https://game.no-os.com/">
 <meta property="og:type"        content="website">
 <meta name="twitter:card"       content="summary_large_image">
-<!-- GameMonetize SDK -->
+<!-- GameMonetize SDK — must load before game.js -->
 <script src="https://api.gamemonetize.com/gmapi.js"></script>
-<!-- Google tag (gtag.js) -->
+<script>
+  window.sdk = new GameMonetize({
+    gameId: '3r1ki0k435jc3j6dvoweeps7fvs0p8m8',
+    onEvent: function(event) {
+      if (event.name === 'SDK_READY') {
+        console.log('[GM] SDK ready');
+      }
+      if (event.name === 'SDK_GAME_PAUSE') {
+        console.log('[GM] ad started');
+      }
+      if (event.name === 'SDK_GAME_START') {
+        console.log('[GM] ad finished');
+      }
+    }
+  });
+</script>
+<!-- Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-5LXLVZNEYE"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
@@ -23,9 +38,9 @@
 </script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
-  #gameCanvas { border: 2px solid #333; image-rendering: pixelated; }
-  #ui { color: #aaa; font-size: 12px; margin-top: 6px; }
+  body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: monospace; }
+  #gameCanvas { border: 2px solid #333; image-rendering: pixelated; display: block; }
+  #ui { color: #aaa; font-size: 12px; margin-top: 6px; text-align: center; }
 </style>
 </head>
 <body>
