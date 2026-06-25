@@ -653,12 +653,12 @@ function createShareButtons(name, sc) {
   });
 
   const gameUrl  = 'https://game.no-os.com/';
-  const fbQuote  = `🚁 Steel Rain: Vietnam '69\n` +
-                   `ฉันเพิ่งทำคะแนน ${sc.toLocaleString()} คะแนน ในชื่อ ${name}!\n` +
-                   `มาลองดูว่าคุณจะทำได้มากกว่านี้ไหม? 🎮🔥`;
-  const lineText = `🚁 Steel Rain: Vietnam '69\n` +
-                   `${name} ทำได้ ${sc.toLocaleString()} คะแนน!\n` +
-                   `มาแข่งกันมั้ย? 👉 ${gameUrl}`;
+  const fbQuote  = `Steel Rain: Vietnam '69\n` +
+                   `I just scored ${sc.toLocaleString()} as ${name}!\n` +
+                   `Can you beat me?`;
+  const lineText = `Steel Rain: Vietnam '69\n` +
+                   `${name} scored ${sc.toLocaleString()}!\n` +
+                   `Challenge me! ${gameUrl}`;
 
   const fbBtn = document.createElement('button');
   fbBtn.textContent = '📘 Facebook';
@@ -1611,13 +1611,13 @@ function drawNameEntry() {
     // Arrow hint
     ctx.fillStyle = '#666';
     ctx.font = '8px monospace';
-    ctx.fillText('↑↓ เปลี่ยนตัวอักษร   ←→ เลือกช่อง', W / 2 - 78, 198);
+    ctx.fillText('UP/DOWN: Change char   LEFT/RIGHT: Select', W / 2 - 90, 198);
 
     // Enter hint blink
     if (Math.floor(Date.now() / 600) % 2) {
       ctx.fillStyle = '#aaa';
       ctx.font = '9px monospace';
-      ctx.fillText('ENTER = ยืนยัน', W / 2 - 40, 218);
+      ctx.fillText('ENTER = Confirm', W / 2 - 40, 218);
     }
   }
 
@@ -1627,16 +1627,16 @@ function drawNameEntry() {
 
   ctx.fillStyle = '#f80';
   ctx.font = 'bold 9px monospace';
-  ctx.fillText('-- 🌐 GLOBAL TOP 10 --', W / 2 - 62, boardY);
+  ctx.fillText('-- GLOBAL TOP 10 --', W / 2 - 52, boardY);
 
   if (boardLoading) {
     ctx.fillStyle = '#888';
     ctx.font = '9px monospace';
-    ctx.fillText('กำลังโหลด...', W / 2 - 36, boardY + 20);
+    ctx.fillText('Loading...', W / 2 - 24, boardY + 20);
   } else if (board.length === 0) {
     ctx.fillStyle = '#555';
     ctx.font = '9px monospace';
-    ctx.fillText('ยังไม่มีคะแนน', W / 2 - 36, boardY + 20);
+    ctx.fillText('No scores yet', W / 2 - 30, boardY + 20);
   } else {
     board.forEach((entry, idx) => {
       const myName = playerName.join('');
@@ -1656,7 +1656,7 @@ function drawNameEntry() {
   if (nameConfirmed) {
     ctx.fillStyle = '#555';
     ctx.font = '8px monospace';
-    ctx.fillText('↑ แชร์ผ่านปุ่มด้านล่าง   ENTER = เล่นใหม่', W / 2 - 90, H - 12);
+    ctx.fillText('Share via buttons below   |   ENTER = Play again', W / 2 - 100, H - 12);
   }
 }
 
@@ -1710,7 +1710,7 @@ document.addEventListener('keydown', e => {
     else if (state === STATE.PAUSED) state = STATE.PLAYING;
   }
   if (e.key === 'Enter') {
-    if (state === STATE.TITLE) initGame();
+    if (state === STATE.TITLE) { showGameOverAd(); setTimeout(() => initGame(), 300); }
   }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
