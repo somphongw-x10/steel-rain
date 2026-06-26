@@ -11,14 +11,16 @@ function showGameOverAd() {
 }
 
 // Pause/resume bridge — called by SDK onEvent in index.html while ad plays
-let adPlaying = false;
+let adPlaying = false;       // freezes update loop
+let awaitingResume = false;  // ad ended, waiting for player to press P
 window.gmAdPause = function () {
   adPlaying = true;
+  awaitingResume = false;
   if (currentMusic && music[currentMusic]) music[currentMusic].pause();
 };
 window.gmAdResume = function () {
-  adPlaying = false;
-  if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(() => {});
+  // ad finished — do NOT auto-resume; keep frozen and wait for player to press P
+  awaitingResume = true;
 };
 
 const canvas = document.getElementById('gameCanvas');
@@ -1408,6 +1410,17 @@ function draw() {
     ctx.font = '10px monospace';
     ctx.fillText('Press P to continue', W / 2 - 55, H / 2 + 20);
   }
+
+  if (awaitingResume) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px monospace';
+    ctx.fillText('PAUSED', W / 2 - 40, H / 2);
+    ctx.fillStyle = '#ffd24a';
+    ctx.font = '11px monospace';
+    ctx.fillText('Press P to resume', W / 2 - 56, H / 2 + 22);
+  }
 }
 
 function drawHUD() {
@@ -1639,6 +1652,17 @@ function drawNameEntry() {
 // ========================
 document.addEventListener('keydown', e => {
   keys[e.key] = true;
+
+  // Ad finished — wait for P to resume
+  if (awaitingResume) {
+    if (e.key === 'p' || e.key === 'P') {
+      awaitingResume = false;
+      adPlaying = false;
+      if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(() => {});
+    }
+    e.preventDefault();
+    return;
+  }
 
   // Name entry handling
   if (state === STATE.NAME_ENTRY) {
