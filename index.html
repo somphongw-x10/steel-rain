@@ -22,9 +22,11 @@
           break;
         case 'SDK_GAME_PAUSE':
           console.log('[GM] ad started');
+          if (window.gmAdPause) window.gmAdPause();
           break;
         case 'SDK_GAME_START':
           console.log('[GM] ad finished');
+          if (window.gmAdResume) window.gmAdResume();
           break;
       }
     }

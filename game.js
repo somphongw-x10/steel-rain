@@ -10,6 +10,17 @@ function showGameOverAd() {
   } catch(e) {}
 }
 
+// Pause/resume bridge — called by SDK onEvent in index.html while ad plays
+let adPlaying = false;
+window.gmAdPause = function () {
+  adPlaying = true;
+  if (currentMusic && music[currentMusic]) music[currentMusic].pause();
+};
+window.gmAdResume = function () {
+  adPlaying = false;
+  if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(() => {});
+};
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const W = 320, H = 480;
@@ -1684,7 +1695,9 @@ document.addEventListener('keyup', e => { keys[e.key] = false; });
 function frame(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
-  if (hitStop > 0) {
+  if (adPlaying) {
+    // freeze game while ad is playing
+  } else if (hitStop > 0) {
     hitStop -= dt;
   } else {
     update(dt);
