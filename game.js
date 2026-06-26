@@ -1012,6 +1012,7 @@ function update(dt) {
           if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
           currentMusic = null;
           playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = false;
+          showGameOverAd();
           state = STATE.NAME_ENTRY;
         }
         continue;
@@ -1110,6 +1111,7 @@ function update(dt) {
         if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
         currentMusic = null;
         playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = true;
+        showGameOverAd();
         state = STATE.NAME_ENTRY;
       } else {
         // Mission 3 = night theme
@@ -1655,11 +1657,10 @@ document.addEventListener('keydown', e => {
         createShareButtons(name, score);
       }
     } else {
-      // After confirm: Enter = show ad then retry
+      // After confirm: Enter = retry (ad already shown on win/lose event)
       if (e.key === 'Enter') {
         removeShareButtons();
-        showGameOverAd();
-        setTimeout(() => initGame(), 300);
+        initGame();
       }
     }
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
