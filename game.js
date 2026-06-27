@@ -1707,7 +1707,7 @@ document.addEventListener('keydown', e => {
     else if (state === STATE.PAUSED) state = STATE.PLAYING;
   }
   if (e.key === 'Enter') {
-    if (state === STATE.TITLE) { showGameOverAd(); setTimeout(() => initGame(), 300); }
+    if (state === STATE.TITLE) initGame();
   }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
@@ -1735,14 +1735,20 @@ state = STATE.TITLE;
 terrain = new Terrain();
 score = 0; mission = 1;
 
-// Start menu music on first user interaction (browser autoplay policy)
+// Start menu music + show first ad on first user interaction (any key or click)
 let audioUnlocked = false;
-function unlockAudio() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  playMusic('menu');
+let firstAdShown = false;
+function firstInteraction() {
+  if (!audioUnlocked) {
+    audioUnlocked = true;
+    playMusic('menu');
+  }
+  if (!firstAdShown) {
+    firstAdShown = true;
+    showGameOverAd();
+  }
 }
-document.addEventListener('keydown', unlockAudio, { once: false });
-canvas.addEventListener('click', unlockAudio, { once: true });
+document.addEventListener('keydown', firstInteraction, { once: false });
+canvas.addEventListener('click', firstInteraction, { once: true });
 
 requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(frame); });
