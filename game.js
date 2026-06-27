@@ -19,14 +19,12 @@ window.gmAdPause = function () {
   if (currentMusic && music[currentMusic]) music[currentMusic].pause();
 };
 window.gmAdResume = function () {
-  // If the ad never actually started (failed to load / canceled), SDK_GAME_PAUSE
-  // didn't fire, so adPlaying is false — just continue, don't block on P.
-  if (!adPlaying) {
-    awaitingResume = false;
-    return;
-  }
-  // Ad really played — do NOT auto-resume; wait for player to press P.
-  awaitingResume = true;
+  // Ads only fire at non-gameplay transitions (start / win / lose), so there is
+  // never active gameplay to manually resume into — auto-resume to the next
+  // screen and let the player interact with it directly.
+  adPlaying = false;
+  awaitingResume = false;
+  if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(() => {});
 };
 
 const canvas = document.getElementById('gameCanvas');
