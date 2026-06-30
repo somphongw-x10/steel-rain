@@ -652,7 +652,7 @@ function createShareButtons(name, sc) {
   lineBtn.onclick = () => window.open(`https://line.me/R/msg/text/?${encodedText}`, '_blank');
 
   const retryBtn = document.createElement('button');
-  retryBtn.textContent = '🔄 เล่นใหม่';
+  retryBtn.textContent = '🔄 Play Again';
   styleShareBtn(retryBtn, '#555');
   retryBtn.onclick = () => { removeShareButtons(); initGame(); };
 
