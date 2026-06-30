@@ -1739,20 +1739,15 @@ state = STATE.TITLE;
 terrain = new Terrain();
 score = 0; mission = 1;
 
-// Start menu music + show first ad on first user interaction (any key or click)
+// Start menu music on first user interaction (browser autoplay policy).
+// The first ad is shown on SDK_READY in index.html, not here.
 let audioUnlocked = false;
-let firstAdShown = false;
-function firstInteraction() {
-  if (!audioUnlocked) {
-    audioUnlocked = true;
-    playMusic('menu');
-  }
-  if (!firstAdShown) {
-    firstAdShown = true;
-    showGameOverAd();
-  }
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  playMusic('menu');
 }
-document.addEventListener('keydown', firstInteraction, { once: false });
-canvas.addEventListener('click', firstInteraction, { once: true });
+document.addEventListener('keydown', unlockAudio, { once: false });
+canvas.addEventListener('click', unlockAudio, { once: true });
 
 requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(frame); });
