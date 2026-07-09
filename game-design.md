@@ -61,6 +61,14 @@
 
 ---
 
+## ความคืบหน้า (อัปเดต 2026-07-09)
+- ✅ ข้อ 1 Power-up/item drop, ข้อ 2 i-frame, ข้อ 3 combo — เสร็จ
+- ✅ ข้อ 4 screen shake + hit-stop, ข้อ 5 enemy bullet patterns — เสร็จ
+- ✅ ข้อ 7 Difficulty modes (Easy/Normal/Hard) — เสร็จ (Milestone 1)
+- ✅ ข้อ 8 Tutorial hints — เสร็จ (Milestone 1)
+- ⏳ เหลือ: ข้อ 6 boss variety, ข้อ 9 mission แยกชัด, ข้อ 10 meta/retention
+- 📌 GameMonetize ปฏิเสธเกม AI ทั้งหมด (นโยบายใหม่) → เป้าหมายใหม่: Poki/CrazyGames/GameDistribution
+
 ## ลำดับความสำคัญที่แนะนำให้ทำก่อน
 ทำ 3 อย่างนี้คุ้มที่สุด เปลี่ยนเกมจาก "prototype ที่เล่นได้" เป็น "เกมที่รู้สึกดีตอนเล่น":
 1. ข้อ 1 — Power-up / ไอเทมดรอป
