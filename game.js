@@ -1415,6 +1415,7 @@ function draw() {
   ctx.restore(); // end screen shake — HUD drawn in stable space
 
   drawHUD();
+  drawTutorialHints();
 
   if (state === STATE.PAUSED) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -1437,6 +1438,37 @@ function draw() {
     ctx.font = '11px monospace';
     ctx.fillText('Press P to resume', W / 2 - 56, H / 2 + 22);
   }
+}
+
+// Contextual onboarding — timed hints during the first mission only.
+// Teaches move / shoot / reload / bomb without blocking gameplay.
+const TUTORIAL_HINTS = [
+  { t: 0.5, until: 4.5,  text: 'WASD or ARROW KEYS to move' },
+  { t: 4.5, until: 8.5,  text: 'Hold Z or SPACE to fire' },
+  { t: 8.5, until: 12.5, text: 'AMMO overheats — press R to reload instantly' },
+  { t: 12.5, until: 16.5, text: 'Press X to drop a bomb (clears the screen)' },
+];
+function drawTutorialHints() {
+  if (state !== STATE.PLAYING || mission !== 1) return;
+  const hint = TUTORIAL_HINTS.find(h => missionTimer >= h.t && missionTimer < h.until);
+  if (!hint) return;
+  // fade in/out at the edges of each window
+  const inFade = Math.min(1, (missionTimer - hint.t) / 0.4);
+  const outFade = Math.min(1, (hint.until - missionTimer) / 0.4);
+  const alpha = Math.min(inFade, outFade);
+  const y = H - 90;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '9px monospace';
+  const w = ctx.measureText(hint.text).width + 20;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(W / 2 - w / 2, y - 12, w, 18);
+  ctx.strokeStyle = 'rgba(200,220,140,0.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(W / 2 - w / 2, y - 12, w, 18);
+  ctx.fillStyle = '#dfffa8';
+  ctx.fillText(hint.text, W / 2 - ctx.measureText(hint.text).width / 2, y);
+  ctx.restore();
 }
 
 function drawHUD() {
