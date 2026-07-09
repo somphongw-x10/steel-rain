@@ -544,6 +544,17 @@ class Terrain {
 // GAME STATE
 // ========================
 const STATE = { TITLE: 0, PLAYING: 1, PAUSED: 2, GAMEOVER: 3, MISSION_CLEAR: 4, NAME_ENTRY: 5 };
+
+// Difficulty presets — scale player survivability and enemy pressure
+const DIFFICULTY = {
+  EASY:   { label: 'EASY',   hp: 7, ammo: 80, spawn: 1.35, enemyHp: 0.8, bulletSpeed: 0.8,  desc: 'Relaxed — more HP, fewer enemies' },
+  NORMAL: { label: 'NORMAL', hp: 5, ammo: 60, spawn: 1.0,  enemyHp: 1.0, bulletSpeed: 1.0,  desc: 'Balanced challenge' },
+  HARD:   { label: 'HARD',   hp: 3, ammo: 50, spawn: 0.72, enemyHp: 1.35, bulletSpeed: 1.25, desc: 'For veterans — deadly bullets' },
+};
+const DIFF_ORDER = ['EASY', 'NORMAL', 'HARD'];
+let diffIndex = 1;                 // default NORMAL
+let diff = DIFFICULTY.NORMAL;      // active preset
+
 let state, player, bullets, enemies, particles, wreckages, score;
 let bombFlash = 0;
 let scrollY, mission, missionTimer, bossSpawned, boss;
@@ -671,6 +682,7 @@ function removeShareButtons() {
 }
 
 function initGame() {
+  diff = DIFFICULTY[DIFF_ORDER[diffIndex]];
   state = STATE.PLAYING;
   terrain = new Terrain();
   scrollY = 0; mission = 1; missionTimer = 0; bossSpawned = false; boss = null; score = 0;
@@ -679,8 +691,8 @@ function initGame() {
   setTimeout(startHeliLoop, 800);
   player = {
     x: W/2 - 8, y: H - 80, w: 16, h: 14,
-    speed: 120, hp: 5, maxHp: 5,
-    ammo: 60, maxAmmo: 60, bombs: 2, maxBombs: 2,
+    speed: 120, hp: diff.hp, maxHp: diff.hp,
+    ammo: diff.ammo, maxAmmo: diff.ammo, bombs: 2, maxBombs: 2,
     shootCooldown: 0, bombCooldown: 0, invincible: 0, heatTimer: 0,
     powerLevel: 1,
   };
@@ -699,7 +711,7 @@ const SCROLL_SPEED = 90; // px/s — ความเร็ว terrain (ต้อ
 function spawnWave(dt) {
   enemyTimer -= dt;
   if (enemyTimer > 0) return;
-  enemyTimer = 0.7 + Math.random() * 0.7; // ครึ่งหนึ่งของเดิม → ศัตรู ×2
+  enemyTimer = (0.7 + Math.random() * 0.7) / diff.spawn; // scaled by difficulty (EASY slower, HARD faster)
 
   const onRiver = terrain.isRiver(scrollY, 80); // ตรวจที่ส่วนบนของจอ (ข้างหน้า)
   const roll = Math.random();
@@ -716,7 +728,7 @@ function spawnWave(dt) {
         x: dir > 0 ? -60 : W + 10,
         y: 60 + Math.random() * (H - 220),
         w: 48, h: 48,
-        hp: 5 + mission, maxHp: 5 + mission,
+        hp: Math.ceil((5 + mission) * diff.enemyHp), maxHp: Math.ceil((5 + mission) * diff.enemyHp),
         speed: 55 + mission * 5, dir,
         shootTimer: 1 + Math.random(), shootRate: 1.4,
         points: 500, animOffset: Math.random() * 4 | 0,
@@ -732,7 +744,7 @@ function spawnWave(dt) {
           x: dir > 0 ? -60 - i * 65 : W + 10 + i * 65,
           y: 80 + Math.random() * (H - 280),
           w: 40, h: 40,
-          hp: 3, maxHp: 3,
+          hp: Math.ceil(3 * diff.enemyHp), maxHp: Math.ceil(3 * diff.enemyHp),
           speed: 58, dir,
           shootTimer: 1.5 + i * 0.4, shootRate: 1.8,
           points: 400, animOffset: i, pattern: 'aimed',
@@ -749,7 +761,7 @@ function spawnWave(dt) {
         x: 20 + Math.random() * (W - 80),
         y: -50,
         w: 38, h: 38,
-        hp: 6 + mission * 2, maxHp: 6 + mission * 2,
+        hp: Math.ceil((6 + mission * 2) * diff.enemyHp), maxHp: Math.ceil((6 + mission * 2) * diff.enemyHp),
         vx: 0,                          // velocity X (ไล่ตาม player)
         maxVx: 38 + mission * 4,        // ความเร็วสูงสุดแนวนอน
         shootTimer: 1.2 + Math.random(), shootRate: 1.6 - mission * 0.1,
@@ -764,7 +776,7 @@ function spawnWave(dt) {
         x: 20 + Math.random() * (W - 80),
         y: -50,
         w: 40, h: 40,
-        hp: 3 + mission, maxHp: 3 + mission,
+        hp: Math.ceil((3 + mission) * diff.enemyHp), maxHp: Math.ceil((3 + mission) * diff.enemyHp),
         shootTimer: 0.8 + Math.random(), shootRate: 1.3 - mission * 0.1,
         points: 300, pattern: cannonPattern,
         // cannon ไม่มี speed — เลื่อนพร้อมพื้นดิน
@@ -779,7 +791,7 @@ function spawnBoss() {
     type: 'boss_boat',
     x: W / 2 - 40, y: -100,
     w: 80, h: 80,
-    hp: 40 + mission * 10, maxHp: 40 + mission * 10,
+    hp: Math.ceil((40 + mission * 10) * diff.enemyHp), maxHp: Math.ceil((40 + mission * 10) * diff.enemyHp),
     speed: 45, phase: 0, dir: 1,
     shootTimer: 0, phaseTimer: 0,
     points: 5000 + mission * 1000,
@@ -878,7 +890,7 @@ function fireEnemyBullet(e) {
   const dy = player.y + 7 - cy;
   const dist = Math.sqrt(dx * dx + dy * dy) || 1;
   const ndx = dx / dist, ndy = dy / dist;
-  const speed = 160 + mission * 10;
+  const speed = (160 + mission * 10) * diff.bulletSpeed;
   const pattern = e.pattern || 'aimed';
 
   const push = (vx, vy, sz = 4) =>
@@ -1524,18 +1536,44 @@ function drawTitle() {
   // Heli on title
   drawPlayerHeli(W / 2, 190, 0.9);
 
+  // Difficulty selector
+  ctx.fillStyle = '#aaa';
+  ctx.font = '8px monospace';
+  ctx.fillText('DIFFICULTY   (< > to change)', W / 2 - 78, 250);
+
+  const boxW = 66, gap = 6, totalW = boxW * 3 + gap * 2;
+  let bx = W / 2 - totalW / 2;
+  DIFF_ORDER.forEach((key, i) => {
+    const sel = i === diffIndex;
+    const d = DIFFICULTY[key];
+    ctx.fillStyle = sel ? '#3a5a2a' : '#1a1a1a';
+    ctx.fillRect(bx, 258, boxW, 20);
+    ctx.strokeStyle = sel ? '#8fd86a' : '#444';
+    ctx.lineWidth = sel ? 2 : 1;
+    ctx.strokeRect(bx, 258, boxW, 20);
+    ctx.fillStyle = sel ? '#cfffa8' : '#888';
+    ctx.font = (sel ? 'bold ' : '') + '9px monospace';
+    ctx.fillText(d.label, bx + boxW / 2 - ctx.measureText(d.label).width / 2, 272);
+    bx += boxW + gap;
+  });
+  // Selected difficulty description
+  ctx.fillStyle = '#7a9';
+  ctx.font = '7px monospace';
+  const desc = DIFFICULTY[DIFF_ORDER[diffIndex]].desc;
+  ctx.fillText(desc, W / 2 - ctx.measureText(desc).width / 2, 290);
+
   ctx.fillStyle = '#fff';
   ctx.font = '10px monospace';
-  if (Math.floor(Date.now() / 550) % 2) ctx.fillText('PRESS ENTER TO START', W / 2 - 68, 280);
+  if (Math.floor(Date.now() / 550) % 2) ctx.fillText('PRESS ENTER TO START', W / 2 - 68, 318);
 
   ctx.fillStyle = '#888';
   ctx.font = '8px monospace';
-  ctx.fillText('WASD: Move   Z/SPACE: Gun   X: BOMB   R: Reload', W / 2 - 96, 320);
-  ctx.fillText('P: Pause', W / 2 - 24, 336);
+  ctx.fillText('WASD: Move   Z/SPACE: Gun   X: BOMB   R: Reload', W / 2 - 96, 348);
+  ctx.fillText('P: Pause', W / 2 - 24, 362);
 
   ctx.fillStyle = '#4a6';
   ctx.font = '7px monospace';
-  ctx.fillText('3 MISSIONS  |  DESTROY ALL ENEMIES', W / 2 - 75, 380);
+  ctx.fillText('3 MISSIONS  |  DESTROY ALL ENEMIES', W / 2 - 75, 392);
 }
 
 function drawNameEntry() {
@@ -1710,8 +1748,10 @@ document.addEventListener('keydown', e => {
     if (state === STATE.PLAYING) state = STATE.PAUSED;
     else if (state === STATE.PAUSED) state = STATE.PLAYING;
   }
-  if (e.key === 'Enter') {
-    if (state === STATE.TITLE) initGame();
+  if (state === STATE.TITLE) {
+    if (e.key === 'ArrowLeft')  diffIndex = (diffIndex + DIFF_ORDER.length - 1) % DIFF_ORDER.length;
+    if (e.key === 'ArrowRight') diffIndex = (diffIndex + 1) % DIFF_ORDER.length;
+    if (e.key === 'Enter') initGame();
   }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
