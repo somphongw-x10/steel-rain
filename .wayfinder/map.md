@@ -12,6 +12,7 @@ polish spec ที่จัดลำดับความสำคัญแล�
 - ความคืบหน้าเกม: item 1-5, 7, 8 ใน [game-design.md](../game-design.md) เสร็จแล้ว
 - Skills ที่ควรใช้ต่อ ticket: `/grilling` + `/domain-modeling` (default), `/prototype` สำหรับ "ควรดู/รู้สึกยังไง"
 - แผนนี้ **วางแผน** เป็นหลัก — ผลลัพธ์คือ decision ที่ล็อก ไม่ใช่การลงมือแก้ asset/โค้ด
+- ▶️ ใบถัดไปที่ตกลงจะหยิบ: **ticket 002 (game feel/juice)** — ให้ผล "ไม่เหมือน prototype" ไวสุดต่อแรงที่ลง
 
 ## Decisions so far
 
