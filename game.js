@@ -55,17 +55,52 @@ function loadMusic(key, path) {
   music[key] = a;
 }
 
+// A3 — crossfade between tracks instead of a hard cut
 function playMusic(key) {
   if (currentMusic === key) return;
-  if (currentMusic && music[currentMusic]) {
-    music[currentMusic].pause();
-    music[currentMusic].currentTime = 0;
-  }
+  const prev = currentMusic;
   currentMusic = key;
-  if (music[key]) {
-    music[key].currentTime = 0;
-    music[key].play().catch(() => {});
+  const next = music[key];
+  if (next) {
+    next.currentTime = 0;
+    next.volume = 0;
+    next.play().catch(() => {});
   }
+  const prevTrack = prev && music[prev];
+  const steps = 12, dur = 40;
+  let n = 0;
+  const fade = setInterval(() => {
+    n++;
+    const t = n / steps;
+    if (next) next.volume = musicVol * musicDuck * t;
+    if (prevTrack) prevTrack.volume = musicVol * musicDuck * (1 - t);
+    if (n >= steps) {
+      clearInterval(fade);
+      if (prevTrack) { prevTrack.pause(); prevTrack.currentTime = 0; }
+    }
+  }, dur);
+}
+
+// A2 — duck music under big moments (bomb / boss / death), then ramp back
+let musicDuck = 1;
+let duckTimer = null;
+function duckMusic(amount = 0.35, holdMs = 500) {
+  musicDuck = amount;
+  if (currentMusic && music[currentMusic]) music[currentMusic].volume = musicVol * musicDuck;
+  if (duckTimer) clearInterval(duckTimer);
+  setTimeout(() => {
+    duckTimer = setInterval(() => {
+      musicDuck = Math.min(1, musicDuck + 0.06);
+      if (currentMusic && music[currentMusic]) music[currentMusic].volume = musicVol * musicDuck;
+      if (musicDuck >= 1) { clearInterval(duckTimer); duckTimer = null; }
+    }, 40);
+  }, holdMs);
+}
+
+// A1 — randomized explosion sound (death sfx + occasional blast layer)
+function playExplosionSfx() {
+  playSfx(Math.random() < 0.5 ? 'enemy_die1' : 'enemy_die2', 0.3);
+  if (Math.random() < 0.5) playSfx(Math.random() < 0.5 ? 'blast1' : 'blast2', 0.25);
 }
 
 function playSfx(key, pitchVariance = 0) {
@@ -97,6 +132,15 @@ loadSfx('heli_stop',  'assets/Sounds/Helicopter_engine_stop.wav',  0.6);
 loadSfx('player_hit', 'assets/Sounds/Walkie_talkie.wav',      0.55);
 loadSfx('collect',    'assets/Sounds/Collect_sound.wav',      0.5);
 loadSfx('coin',       'assets/Sounds/Coin_drop.wav',          0.4);
+// A1 — extra explosion layers for variety
+loadSfx('blast1',     'assets/Sounds/Crate_open_1.wav',       0.5);
+loadSfx('blast2',     'assets/Sounds/Crate_open_2_steam.wav', 0.5);
+// A4 — arcade / UI feedback
+loadSfx('coin_in',    'assets/Sounds/Insert_coin.wav',        0.6);
+loadSfx('ui_move',    'assets/Sounds/Neon_1.wav',             0.4);
+loadSfx('ui_confirm', 'assets/Sounds/Print_ticket.wav',       0.5);
+// A5 — warning
+loadSfx('warning',    'assets/Sounds/Police_signal.wav',      0.5);
 
 // Helicopter ambient (continuous loop)
 let heliLoop = null;
@@ -791,6 +835,8 @@ function spawnWave(dt) {
 
 function spawnBoss() {
   bossSpawned = true;
+  playSfx('warning');      // A5 — boss approach alert
+  duckMusic(0.4, 800);     // A2
   boss = {
     type: 'boss_boat',
     x: W / 2 - 40, y: -100,
@@ -849,6 +895,7 @@ function dropBomb() {
   // Screen flash + shake
   bombFlash = 1.0;
   addTrauma(0.85);
+  duckMusic(0.3, 600);   // A2
 
   // Kill ALL enemies on screen
   for (let i = enemies.length - 1; i >= 0; i--) {
@@ -1065,6 +1112,8 @@ function update(dt) {
         playerHitFlash = 1;                                          // J4
         hitStop = Math.max(hitStop, 0.05);
         playSfx('player_hit', 0.2);
+        duckMusic(0.45, 300);                                       // A2
+        if (player.hp === 1) playSfx('warning');                    // A5 — low HP alert
         spawnParticle(player.x + 8, player.y + 7, '#ff0000', 12);
         spawnDebris(player.x + 8, player.y + 7, '#faa', 5);
         bullets.splice(i, 1);
@@ -1118,7 +1167,7 @@ function update(dt) {
       spawnExplosion(e.x + e.w / 2, e.y + e.h / 2, e.w * 1.2);       // J1
       spawnDebris(e.x + e.w / 2, e.y + e.h / 2, '#caa', 7);          // J3
       spawnParticle(e.x + e.w / 2, e.y + e.h / 2, '#ff6600', 8);
-      playSfx(Math.random() < 0.5 ? 'enemy_die1' : 'enemy_die2', 0.25);
+      playExplosionSfx();   // A1
       addTrauma(0.16);
       hitStop = Math.max(hitStop, 0.035);                           // J2
       // Combo
@@ -1161,6 +1210,8 @@ function update(dt) {
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, '#ffaa00', 16);
       playSfx('enemy_die1', 0);
       playSfx('enemy_die2', 0);
+      playSfx('blast1', 0.2); playSfx('blast2', 0.2);   // A1 — layered boss blast
+      duckMusic(0.25, 900);                              // A2
       addTrauma(1.0);
       hitStop = 0.09;
       score += boss.points;
@@ -1922,6 +1973,7 @@ document.addEventListener('keydown', e => {
       } else if (e.key === 'Enter') {
         // Confirm name
         nameConfirmed = true;
+        playSfx('ui_confirm');   // A4
         const name = playerName.join('');
         addToBoard(name, score, mission);
         createShareButtons(name, score);
@@ -1942,9 +1994,9 @@ document.addEventListener('keydown', e => {
     else if (state === STATE.PAUSED) state = STATE.PLAYING;
   }
   if (state === STATE.TITLE) {
-    if (e.key === 'ArrowLeft')  diffIndex = (diffIndex + DIFF_ORDER.length - 1) % DIFF_ORDER.length;
-    if (e.key === 'ArrowRight') diffIndex = (diffIndex + 1) % DIFF_ORDER.length;
-    if (e.key === 'Enter') initGame();
+    if (e.key === 'ArrowLeft')  { diffIndex = (diffIndex + DIFF_ORDER.length - 1) % DIFF_ORDER.length; playSfx('ui_move', 0.15); } // A4
+    if (e.key === 'ArrowRight') { diffIndex = (diffIndex + 1) % DIFF_ORDER.length; playSfx('ui_move', 0.15); }                     // A4
+    if (e.key === 'Enter') { playSfx('coin_in'); initGame(); }   // A4 — arcade "insert coin"
   }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
