@@ -11,12 +11,13 @@ polish spec ที่จัดลำดับความสำคัญแล�
 - เป้าหมายพอร์ทระยะยาว: Poki/CrazyGames/GameDistribution (GameMonetize ปฏิเสธเกม AI แล้ว)
 - ความคืบหน้าเกม: item 1-5, 7, 8 ใน [game-design.md](../game-design.md) เสร็จแล้ว
 - Skills ที่ควรใช้ต่อ ticket: `/grilling` + `/domain-modeling` (default), `/prototype` สำหรับ "ควรดู/รู้สึกยังไง"
-- แผนนี้ **วางแผน** เป็นหลัก — ผลลัพธ์คือ decision ที่ล็อก ไม่ใช่การลงมือแก้ asset/โค้ด
-- ▶️ ใบถัดไปที่ตกลงจะหยิบ: **ticket 002 (game feel/juice)** — ให้ผล "ไม่เหมือน prototype" ไวสุดต่อแรงที่ลง
+- ⚙️ **Override (ตกลงกับ user):** carry execution เข้า map ได้ — แต่ละ area spec เมื่อ grill/ล็อกเสร็จ ให้ **ลงมือแก้โค้ดจริงในรอบเดียวกัน** ไม่ใช่แค่ decision (ทำทีละผิว: spec → build → verify)
+- ▶️ ใบถัดไปที่ takeable: 003 (กราฟิก/VFX), 004 (เสียง), 005 (menu), 006 (animation) — parallel ได้ทั้งหมด
 
 ## Decisions so far
 
 - [ปักหมุด polish bar + เกมอ้างอิง](tickets/001-polish-bar-references.md) — อ้างอิง 1943/Raiden, ทิศทาง arcade; polish bar = READABLE + PUNCHY + IMMEDIATE (ทุก area spec ต้องผ่าน 3 ข้อนี้)
+- [Spec: game feel / juice](tickets/002-game-feel-juice-spec.md) — ล็อก+ลงมือ J1-J6: explosion บน kill, hit-stop ทุก kill, chunky debris, red hit flash, muzzle+recoil, pickup popup — verified ใน browser
 
 ## Not yet specified
 

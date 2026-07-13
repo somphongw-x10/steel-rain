@@ -564,6 +564,9 @@ let items = [];
 let comboCount = 0, comboTimer = 0, comboDisplay = 0;
 let screenShakeTrauma = 0;
 let hitStop = 0;
+let explosions = [];      // J1 — fire-sprite blasts on kill
+let popups = [];          // J6 — floating pickup text
+let playerHitFlash = 0;   // J4 — red screen flash when player is hit
 
 // Name entry
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -694,9 +697,10 @@ function initGame() {
     speed: 120, hp: diff.hp, maxHp: diff.hp,
     ammo: diff.ammo, maxAmmo: diff.ammo, bombs: 2, maxBombs: 2,
     shootCooldown: 0, bombCooldown: 0, invincible: 0, heatTimer: 0,
-    powerLevel: 1,
+    powerLevel: 1, recoil: 0, muzzle: 0,
   };
   bullets = []; enemies = []; particles = []; wreckages = []; items = [];
+  explosions = []; popups = []; playerHitFlash = 0;
   bombFlash = 0;
   enemyTimer = 0;
   comboCount = 0; comboTimer = 0; comboDisplay = 0;
@@ -806,6 +810,8 @@ function firePlayerBullet() {
   const pl = player.powerLevel;
   player.ammo--;
   player.shootCooldown = pl >= 5 ? 0.08 : 0.1;
+  player.recoil = 2.5;   // J5 — kickback
+  player.muzzle = 0.06;  // J5 — muzzle flash timer
   playSfx('gun', 0.15);
   const cx = player.x + player.w / 2;
   const by = player.y - 4;
@@ -944,6 +950,31 @@ function spawnParticle(x, y, color, count = 6) {
   }
 }
 
+// J1 — fire-sprite explosion on kill. size ~ enemy size.
+function spawnExplosion(x, y, size = 32) {
+  const variant = 1 + (Math.random() * 4 | 0); // fire1..fire4
+  explosions.push({ x, y, size, variant, frame: 0, timer: 0 });
+}
+
+// J3 — chunky metal debris: heavier, spins, tumbles.
+function spawnDebris(x, y, color, count = 6) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 50 + Math.random() * 130;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 40,
+      color, life: 0.5 + Math.random() * 0.7, size: 2 + Math.random() * 4,
+      grav: 220, rot: Math.random() * Math.PI, vr: (Math.random() * 2 - 1) * 12, kind: 'debris',
+    });
+  }
+}
+
+// J6 — floating reward text on pickup.
+function spawnPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, life: 0.9, scale: 1.6 });
+}
+
 function spawnWreckage(e) {
   wreckages.push({
     x: e.x, y: e.y, w: e.w, h: e.h,
@@ -1030,9 +1061,12 @@ function update(dt) {
       if (overlap(b, { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 6 })) {
         player.hp--;
         player.invincible = 1.5;
-        addTrauma(0.35);
+        addTrauma(0.5);
+        playerHitFlash = 1;                                          // J4
+        hitStop = Math.max(hitStop, 0.05);
         playSfx('player_hit', 0.2);
-        spawnParticle(player.x + 8, player.y + 7, '#ff0000', 10);
+        spawnParticle(player.x + 8, player.y + 7, '#ff0000', 12);
+        spawnDebris(player.x + 8, player.y + 7, '#faa', 5);
         bullets.splice(i, 1);
         if (player.hp <= 0) {
           player.powerLevel = 1;
@@ -1081,9 +1115,12 @@ function update(dt) {
     if (e.y > H + 60) { enemies.splice(i, 1); continue; }
     if (e.hp <= 0) {
       spawnWreckage(e);
-      spawnParticle(e.x + e.w / 2, e.y + e.h / 2, '#ff6600', 10);
+      spawnExplosion(e.x + e.w / 2, e.y + e.h / 2, e.w * 1.2);       // J1
+      spawnDebris(e.x + e.w / 2, e.y + e.h / 2, '#caa', 7);          // J3
+      spawnParticle(e.x + e.w / 2, e.y + e.h / 2, '#ff6600', 8);
       playSfx(Math.random() < 0.5 ? 'enemy_die1' : 'enemy_die2', 0.25);
-      addTrauma(0.1);
+      addTrauma(0.16);
+      hitStop = Math.max(hitStop, 0.035);                           // J2
       // Combo
       comboCount++;
       comboTimer = 3.0;
@@ -1163,7 +1200,10 @@ function update(dt) {
       else if (it.type === 'B') player.bombs = Math.min(player.maxBombs, player.bombs + 1);
       playSfx('collect', 0.2);
       const col = it.type === 'P' ? '#0ff' : it.type === 'H' ? '#f44' : '#f80';
-      spawnParticle(it.x + 6, it.y + 6, col, 8);
+      spawnParticle(it.x + 6, it.y + 6, col, 10);
+      const label = it.type === 'P' ? 'POWER UP!' : it.type === 'H' ? '+1 HP' : '+1 BOMB'; // J6
+      spawnPopup(it.x + 6, it.y, label, col);
+      addTrauma(0.08);
       items.splice(i, 1);
       continue;
     }
@@ -1188,9 +1228,30 @@ function update(dt) {
   // Particles
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.life -= dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.grav || 60) * dt; p.life -= dt;
+    if (p.kind === 'debris') { p.rot += p.vr * dt; p.vx *= 0.98; }
     if (p.life <= 0) particles.splice(i, 1);
   }
+
+  // J1 — explosions (fire sprite sequence, 3 frames)
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const ex = explosions[i];
+    ex.timer += dt;
+    ex.frame = Math.floor(ex.timer / 0.05);
+    if (ex.frame >= 3) explosions.splice(i, 1);
+  }
+
+  // J6 — pickup popups float up and fade
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const pu = popups[i];
+    pu.y -= 22 * dt; pu.life -= dt; pu.scale += (1 - pu.scale) * 0.2;
+    if (pu.life <= 0) popups.splice(i, 1);
+  }
+
+  // J4/J5 — timed feedback decay
+  playerHitFlash = Math.max(0, playerHitFlash - dt * 3);
+  player.recoil = Math.max(0, player.recoil - dt * 30);
+  player.muzzle = Math.max(0, player.muzzle - dt);
 }
 
 // ========================
@@ -1213,11 +1274,25 @@ function draw() {
 
   // Particles (back)
   particles.forEach(p => {
-    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.5));
     ctx.fillStyle = p.color;
-    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    if (p.kind === 'debris') {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+      ctx.restore();
+    } else {
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
   });
   ctx.globalAlpha = 1;
+
+  // J1 — explosions (fire sprite) over particles
+  explosions.forEach(ex => {
+    const s = ex.size;
+    drawSprite(`fire${ex.variant}_${ex.frame + 1}`, ex.x - s / 2, ex.y - s / 2, s, s);
+  });
 
   // Wreckages (death anim)
   wreckages.forEach(w => {
@@ -1400,19 +1475,42 @@ function draw() {
   const heliAlpha = (player.invincible <= 0 || Math.floor(player.invincible * 8) % 2 === 0) ? 1 : 0;
   if (heliAlpha > 0) {
     const hcx = player.x + player.w / 2;
-    const hcy = player.y + player.h / 2;
+    const hcy = player.y + player.h / 2 + player.recoil;  // J5 — kickback
+    // J5 — muzzle flash at the nose
+    if (player.muzzle > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, player.muzzle * 14);
+      ctx.fillStyle = '#ffe680';
+      ctx.beginPath();
+      ctx.ellipse(hcx, player.y - 4, 3.5, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.ellipse(hcx, player.y - 3, 1.8, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     drawPlayerHeli(hcx, hcy, 1);
   }
 
-  // Explosion effects at impact points using Fire sprites
-  particles.filter(p => p.color === '#ff6600' && p.life > 0.5).slice(0, 3).forEach((p, i) => {
-    const ff = fireFrame(i);
-    ctx.globalAlpha = 0.7;
-    drawSprite(`fire1_${ff}`, p.x - 16, p.y - 16, 32, 32);
-    ctx.globalAlpha = 1;
+  // J6 — pickup popups
+  popups.forEach(pu => {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, pu.life * 1.5);
+    ctx.fillStyle = pu.color;
+    ctx.font = `bold ${Math.round(7 * pu.scale)}px monospace`;
+    ctx.fillText(pu.text, pu.x - ctx.measureText(pu.text).width / 2, pu.y);
+    ctx.restore();
   });
+  ctx.globalAlpha = 1;
 
   ctx.restore(); // end screen shake — HUD drawn in stable space
+
+  // J4 — red damage flash (vignette-ish full overlay)
+  if (playerHitFlash > 0) {
+    ctx.fillStyle = `rgba(200,0,0,${playerHitFlash * 0.35})`;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   drawHUD();
   drawTutorialHints();
