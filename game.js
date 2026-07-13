@@ -611,6 +611,13 @@ let hitStop = 0;
 let explosions = [];      // J1 — fire-sprite blasts on kill
 let popups = [];          // J6 — floating pickup text
 let playerHitFlash = 0;   // J4 — red screen flash when player is hit
+// Presentation (ticket 005)
+let fade = { a: 0, target: 0, onMid: null, midDone: true };  // M1 — screen fade
+let missionCardTimer = 0; // M2/M4 — mission intro / victory banner
+let missionCardText = '';
+let missionCardSub = '';
+let warningTimer = 0;     // M3 — boss WARNING banner
+let victoryPending = false; // M4 — hold before name entry on final clear
 
 // Name entry
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -745,6 +752,8 @@ function initGame() {
   };
   bullets = []; enemies = []; particles = []; wreckages = []; items = [];
   explosions = []; popups = []; playerHitFlash = 0;
+  warningTimer = 0; victoryPending = false;
+  showMissionCard();   // M2 — intro card for mission 1
   bombFlash = 0;
   enemyTimer = 0;
   comboCount = 0; comboTimer = 0; comboDisplay = 0;
@@ -837,6 +846,7 @@ function spawnBoss() {
   bossSpawned = true;
   playSfx('warning');      // A5 — boss approach alert
   duckMusic(0.4, 800);     // A2
+  warningTimer = 2.2;      // M3 — WARNING banner
   boss = {
     type: 'boss_boat',
     x: W / 2 - 40, y: -100,
@@ -1020,6 +1030,19 @@ function spawnDebris(x, y, color, count = 6) {
 // J6 — floating reward text on pickup.
 function spawnPopup(x, y, text, color) {
   popups.push({ x, y, text, color, life: 0.9, scale: 1.6 });
+}
+
+// M1 — start a fade-out; onMid runs at full black, then it fades back in
+function startFade(onMid) {
+  fade.target = 1; fade.onMid = onMid; fade.midDone = false;
+}
+
+// M2/M4 — show a mission/victory banner
+const MISSION_NAMES = ['', 'LZ JUNGLE', 'MEKONG DELTA', 'HO CHI MINH'];
+function showMissionCard(text, sub) {
+  missionCardText = text || `MISSION ${mission}`;
+  missionCardSub = sub !== undefined ? sub : (MISSION_NAMES[mission] || '');
+  missionCardTimer = 2.6;
 }
 
 function spawnWreckage(e) {
@@ -1223,16 +1246,13 @@ function update(dt) {
       missionTimer = 0;
       enemyTimer = 3;
       if (mission > 3) {
-        stopHeliLoop();
-        playSfx('heli_stop');
-        if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
-        currentMusic = null;
-        playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = true;
-        showGameOverAd();
-        state = STATE.NAME_ENTRY;
+        // M4 — victory beat, then hand off to name entry
+        victoryPending = true;
+        showMissionCard('MISSION COMPLETE', 'ALL SECTORS CLEARED');
       } else {
         // Mission 3 = night theme
         if (mission === 3) { playMusic('night'); }
+        showMissionCard();   // M2 — intro card for the new mission
       }
     }
     if (boss && boss.hp < boss.maxHp * 0.45 && boss.phase === 0) {
@@ -1303,6 +1323,23 @@ function update(dt) {
   playerHitFlash = Math.max(0, playerHitFlash - dt * 3);
   player.recoil = Math.max(0, player.recoil - dt * 30);
   player.muzzle = Math.max(0, player.muzzle - dt);
+
+  // M2/M3/M4 — presentation timers
+  if (missionCardTimer > 0) {
+    missionCardTimer -= dt;
+    if (missionCardTimer <= 0 && victoryPending) {
+      // M4 — victory card finished → go to name entry
+      victoryPending = false;
+      stopHeliLoop();
+      playSfx('heli_stop');
+      if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
+      currentMusic = null;
+      playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = true;
+      showGameOverAd();
+      state = STATE.NAME_ENTRY;
+    }
+  }
+  if (warningTimer > 0) warningTimer -= dt;
 }
 
 // ========================
@@ -1623,6 +1660,8 @@ function draw() {
 
   drawHUD();
   drawTutorialHints();
+  drawMissionCard();   // M2/M4
+  drawWarningBanner(); // M3
 
   if (state === STATE.PAUSED) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -1675,6 +1714,49 @@ function drawTutorialHints() {
   ctx.strokeRect(W / 2 - w / 2, y - 12, w, 18);
   ctx.fillStyle = '#dfffa8';
   ctx.fillText(hint.text, W / 2 - ctx.measureText(hint.text).width / 2, y);
+  ctx.restore();
+}
+
+// M2/M4 — mission / victory banner card (slides in, holds, fades)
+function drawMissionCard() {
+  if (missionCardTimer <= 0) return;
+  const t = missionCardTimer;
+  const alpha = Math.min(1, t < 0.5 ? t * 2 : (t > 2.1 ? (2.6 - t) * 2 : 1));
+  const cy = H / 2 - 30;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, cy - 22, W, 56);
+  ctx.fillStyle = '#8fd86a';
+  ctx.fillRect(0, cy - 23, W, 1);
+  ctx.fillRect(0, cy + 34, W, 1);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 16px monospace';
+  ctx.fillText(missionCardText, W / 2 - ctx.measureText(missionCardText).width / 2, cy + 2);
+  if (missionCardSub) {
+    ctx.fillStyle = '#8fd86a';
+    ctx.font = '10px monospace';
+    ctx.fillText(missionCardSub, W / 2 - ctx.measureText(missionCardSub).width / 2, cy + 22);
+  }
+  ctx.restore();
+}
+
+// M3 — flashing WARNING banner when a boss approaches
+function drawWarningBanner() {
+  if (warningTimer <= 0) return;
+  if (Math.floor(warningTimer * 6) % 2 === 0) return; // blink
+  const cy = 90;
+  ctx.save();
+  ctx.fillStyle = 'rgba(120,0,0,0.55)';
+  ctx.fillRect(0, cy - 12, W, 26);
+  ctx.fillStyle = '#ff3a3a';
+  ctx.font = 'bold 14px monospace';
+  const txt = 'WARNING!';
+  ctx.fillText(txt, W / 2 - ctx.measureText(txt).width / 2, cy);
+  ctx.fillStyle = '#ffb0b0';
+  ctx.font = '8px monospace';
+  const sub = 'BOSS APPROACHING';
+  ctx.fillText(sub, W / 2 - ctx.measureText(sub).width / 2, cy + 10);
   ctx.restore();
 }
 
@@ -1776,6 +1858,12 @@ function drawTitle() {
   ctx.fillStyle = '#8a7030';
   ctx.font = '12px monospace';
   ctx.fillText("VIETNAM '69", W / 2 - 38, 130);
+
+  // M5 — tagline
+  ctx.fillStyle = '#6a8a4a';
+  ctx.font = '8px monospace';
+  const tag = 'RAIN STEEL ON THE JUNGLE WAR';
+  ctx.fillText(tag, W / 2 - ctx.measureText(tag).width / 2, 146);
 
   // Heli on title
   drawPlayerHeli(W / 2, 190, 0.9);
@@ -1996,7 +2084,7 @@ document.addEventListener('keydown', e => {
   if (state === STATE.TITLE) {
     if (e.key === 'ArrowLeft')  { diffIndex = (diffIndex + DIFF_ORDER.length - 1) % DIFF_ORDER.length; playSfx('ui_move', 0.15); } // A4
     if (e.key === 'ArrowRight') { diffIndex = (diffIndex + 1) % DIFF_ORDER.length; playSfx('ui_move', 0.15); }                     // A4
-    if (e.key === 'Enter') { playSfx('coin_in'); initGame(); }   // A4 — arcade "insert coin"
+    if (e.key === 'Enter') { playSfx('coin_in'); startFade(() => initGame()); }   // A4/M1
   }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
@@ -2015,7 +2103,19 @@ function frame(ts) {
   } else {
     update(dt);
   }
+  // M1 — fade drive (runs in all states)
+  fade.a += (fade.target - fade.a) * Math.min(1, dt * 9);
+  if (!fade.midDone && fade.a > 0.92) {
+    fade.midDone = true;
+    if (fade.onMid) { fade.onMid(); fade.onMid = null; }
+    fade.target = 0; // fade back in
+  }
   draw();
+  // M1 — fade overlay on top of everything (all states)
+  if (fade.a > 0.01) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade.a)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
   requestAnimationFrame(frame);
 }
 
