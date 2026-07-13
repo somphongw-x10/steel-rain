@@ -15,7 +15,7 @@ polish spec ที่จัดลำดับความสำคัญแล�
 
 ## Decisions so far
 
-<!-- ยังไม่มี ticket ปิด -->
+- [ปักหมุด polish bar + เกมอ้างอิง](tickets/001-polish-bar-references.md) — อ้างอิง 1943/Raiden, ทิศทาง arcade; polish bar = READABLE + PUNCHY + IMMEDIATE (ทุก area spec ต้องผ่าน 3 ข้อนี้)
 
 ## Not yet specified
 
