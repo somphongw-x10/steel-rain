@@ -336,11 +336,13 @@ function drawPlayerHeli(cx, cy, alpha = 1) {
     return;
   }
   const sx   = heliAnimFrame * HELI_FRAME_W;
-  const dstX = Math.round(cx - HELI_DST_W / 2);
-  const dstY = Math.round(cy - HELI_DST_H / 2);
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.drawImage(src, sx, 0, HELI_FRAME_W, HELI_FRAME_H, dstX, dstY, HELI_DST_W, HELI_DST_H);
+  // N1 — banking tilt
+  const tilt = (player && player.tilt) || 0;
+  ctx.translate(Math.round(cx), Math.round(cy));
+  if (tilt) ctx.rotate(tilt);
+  ctx.drawImage(src, sx, 0, HELI_FRAME_W, HELI_FRAME_H, -HELI_DST_W / 2, -HELI_DST_H / 2, HELI_DST_W, HELI_DST_H);
   ctx.restore();
 }
 
@@ -472,7 +474,9 @@ class Terrain {
 
       const hash = Math.sin(worldY * 0.37 + 4.1);
       if (hash < 0.25) {
-        const x1    = (Math.sin(worldY * 1.13) * 0.5 + 0.5) * W;
+        // N3 — gentle wind sway on the foliage streaks
+        const sway  = Math.sin(worldY * 0.21 + Date.now() * 0.0011) * 3;
+        const x1    = (Math.sin(worldY * 1.13) * 0.5 + 0.5) * W + sway;
         const w     = 15 + (Math.sin(worldY * 2.71) * 0.5 + 0.5) * 30;
         const alpha = (0.08 + (Math.sin(worldY * 0.89) * 0.5 + 0.5) * 0.10) * (1 - blend.river);
         ctx.fillStyle = `rgba(0,30,0,${alpha.toFixed(2)})`;
@@ -1074,10 +1078,13 @@ function update(dt) {
   if (missionTimer > 60 && !bossSpawned) spawnBoss();
 
   // Player move
-  if ((keys['ArrowLeft'] || keys['a']) && player.x > 0) player.x -= player.speed * dt;
-  if ((keys['ArrowRight'] || keys['d']) && player.x + player.w < W) player.x += player.speed * dt;
+  let moveDir = 0;
+  if ((keys['ArrowLeft'] || keys['a']) && player.x > 0) { player.x -= player.speed * dt; moveDir = -1; }
+  if ((keys['ArrowRight'] || keys['d']) && player.x + player.w < W) { player.x += player.speed * dt; moveDir = 1; }
   if ((keys['ArrowUp'] || keys['w']) && player.y > 20) player.y -= player.speed * dt;
   if ((keys['ArrowDown'] || keys['s']) && player.y + player.h < H - 10) player.y += player.speed * dt;
+  // N1 — bank toward move direction, ease back to level
+  player.tilt = (player.tilt || 0) + (moveDir * 0.32 - (player.tilt || 0)) * Math.min(1, dt * 10);
 
   player.shootCooldown   = Math.max(0, player.shootCooldown - dt);
   player.bombCooldown    = Math.max(0, player.bombCooldown - dt);
@@ -1182,8 +1189,11 @@ function update(dt) {
     }
 
     if (e.flashTimer > 0) e.flashTimer -= dt;
+    if (e.spawnT === undefined) e.spawnT = 0.28;   // N5
+    else if (e.spawnT > 0) e.spawnT = Math.max(0, e.spawnT - dt);
     e.shootTimer -= dt;
-    if (e.shootTimer <= 0) { e.shootTimer = e.shootRate; fireEnemyBullet(e); }
+    if (e.shootTimer <= 0) { e.shootTimer = e.shootRate; fireEnemyBullet(e); e.muzzle = 0.09; }  // N2
+    if (e.muzzle > 0) e.muzzle -= dt;
     if (e.y > H + 60) { enemies.splice(i, 1); continue; }
     if (e.hp <= 0) {
       spawnWreckage(e);
@@ -1446,6 +1456,16 @@ function draw() {
 
   // Enemies
   enemies.forEach(e => {
+    // N5 — entrance scale-in (pop from 55% to full over ~0.28s)
+    const spawnScale = e.spawnT > 0 ? 0.55 + 0.45 * (1 - e.spawnT / 0.28) : 1;
+    const scaled = spawnScale < 0.999;
+    if (scaled) {
+      const ecx = e.x + e.w / 2, ecy = e.y + e.h / 2;
+      ctx.save();
+      ctx.translate(ecx, ecy);
+      ctx.scale(spawnScale, spawnScale);
+      ctx.translate(-ecx, -ecy);
+    }
     // Damage flash: brighten the sprite itself (follows sprite shape, not a rect)
     const flashB = e.flashTimer > 0 ? 1 + Math.min(0.9, e.flashTimer * 11) * 10 : 1;
     if (flashB > 1) ctx.filter = `brightness(${flashB})`;
@@ -1495,6 +1515,22 @@ function draw() {
 
     if (flashB > 1) ctx.filter = 'none';
 
+    // N2 — enemy muzzle flash toward the player
+    if (e.muzzle > 0) {
+      const ecx = e.x + e.w / 2, ecy = e.y + e.h / 2;
+      const mdx = player.x + 8 - ecx, mdy = player.y + 7 - ecy;
+      const md = Math.hypot(mdx, mdy) || 1;
+      const fx = ecx + (mdx / md) * (e.h * 0.45);
+      const fy = ecy + (mdy / md) * (e.h * 0.45);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, e.muzzle * 11);
+      ctx.fillStyle = '#ffd24a';
+      ctx.beginPath(); ctx.arc(fx, fy, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(fx, fy, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
     // HP bar for multi-hp enemies
     if (e.maxHp > 1) {
       ctx.fillStyle = '#111';
@@ -1503,11 +1539,22 @@ function draw() {
       ctx.fillStyle = hpColor;
       ctx.fillRect(e.x, e.y - 6, e.w * (e.hp / e.maxHp), 4);
     }
+    if (scaled) ctx.restore();   // N5 — end entrance scale
   });
 
   // Boss
   if (boss) {
     const f = boatFrame();
+    // N4 — telegraph: pulsing red glow while winding up to fire
+    if (boss.y >= 70 && boss.shootTimer < 0.45 && boss.shootTimer > 0) {
+      const pulse = (0.45 - boss.shootTimer) / 0.45;
+      ctx.save();
+      ctx.globalAlpha = 0.35 + Math.sin(Date.now() / 40) * 0.15 * pulse;
+      ctx.strokeStyle = '#ff3030';
+      ctx.lineWidth = 2 + pulse * 3;
+      ctx.strokeRect(boss.x - 3, boss.y - 3, boss.w + 6, boss.h + 6);
+      ctx.restore();
+    }
     const bossFlashB = boss.flashTimer > 0 ? 1 + Math.min(0.9, boss.flashTimer * 9) * 8 : 1;
     if (bossFlashB > 1) ctx.filter = `brightness(${bossFlashB})`;
     const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h);
