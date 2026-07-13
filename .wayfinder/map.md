@@ -18,6 +18,7 @@ polish spec ที่จัดลำดับความสำคัญแล�
 
 - [ปักหมุด polish bar + เกมอ้างอิง](tickets/001-polish-bar-references.md) — อ้างอิง 1943/Raiden, ทิศทาง arcade; polish bar = READABLE + PUNCHY + IMMEDIATE (ทุก area spec ต้องผ่าน 3 ข้อนี้)
 - [Spec: game feel / juice](tickets/002-game-feel-juice-spec.md) — ล็อก+ลงมือ J1-J6: explosion บน kill, hit-stop ทุก kill, chunky debris, red hit flash, muzzle+recoil, pickup popup — verified ใน browser
+- [Spec: กราฟิก / VFX](tickets/003-graphics-vfx-spec.md) — แนว A overlay-only, ลงมือ G1-G5: parallax, vignette, กระสุนแยกสี (player เหลือง/enemy แดง), HUD accent, mission tint (day/dusk/night) — verified, ไม่ใช้ asset ใหม่
 
 ## Not yet specified
 

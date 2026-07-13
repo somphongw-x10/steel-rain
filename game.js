@@ -1255,6 +1255,52 @@ function update(dt) {
 }
 
 // ========================
+// GRAPHICS OVERLAYS (ticket 003, approach A — overlays, no base-art changes)
+// ========================
+
+// G1 — cloud shadows scrolling faster than terrain for a parallax depth cue
+function drawParallax(scrollY) {
+  const off = scrollY * 1.5;
+  ctx.save();
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = '#000';
+  for (let i = 0; i < 5; i++) {
+    const seed = i * 137.5;
+    const x = ((Math.sin(seed) * 0.5 + 0.5) * (W + 120)) - 60;
+    const y = (((off * 0.5 + i * 190) % (H + 240)) - 120);
+    const rx = 45 + (Math.sin(seed * 2.3) * 0.5 + 0.5) * 55;
+    const ry = 22 + (Math.sin(seed * 1.7) * 0.5 + 0.5) * 20;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// G5 — per-mission atmosphere tint (day / dusk / night)
+const MISSION_TINT = {
+  1: null,                         // LZ Jungle — bright day, no tint
+  2: 'rgba(255,150,60,0.14)',      // Mekong Delta — dusk warm
+  3: 'rgba(40,60,150,0.22)',       // Ho Chi Minh — night cool
+};
+function drawMissionTint() {
+  const t = MISSION_TINT[mission];
+  if (t) { ctx.fillStyle = t; ctx.fillRect(0, 0, W, H); }
+}
+
+// G2 — vignette (darkened corners focus the eye toward center)
+let _vignette = null;
+function drawVignette() {
+  if (!_vignette) {
+    _vignette = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.72);
+    _vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    _vignette.addColorStop(1, 'rgba(0,0,0,0.45)');
+  }
+  ctx.fillStyle = _vignette;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ========================
 // DRAW
 // ========================
 function draw() {
@@ -1271,6 +1317,9 @@ function draw() {
 
   // Terrain
   terrain.draw(scrollY);
+
+  // G1 — parallax cloud shadows drifting faster than the ground (depth)
+  drawParallax(scrollY);
 
   // Particles (back)
   particles.forEach(p => {
@@ -1403,15 +1452,20 @@ function draw() {
   // Enemy bullets
   bullets.forEach(b => {
     if (b.owner === 'player') {
-      ctx.fillStyle = '#ffff88';
+      // G3 — bright warm tracer with glow + white-hot core (readable)
+      ctx.fillStyle = 'rgba(255,240,120,0.28)';
+      ctx.fillRect(b.x - 2, b.y - 3, b.w + 4, b.h + 6);
+      ctx.fillStyle = '#ffee44';
       ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(b.x + b.w / 2 - 0.5, b.y, 1, b.h);
     } else {
-      // Tracer round with glow
-      ctx.fillStyle = 'rgba(255,80,0,0.3)';
+      // G3 — enemy round shifted to red/pink so it never reads as a player shot
+      ctx.fillStyle = 'rgba(255,0,60,0.32)';
       ctx.fillRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6);
-      ctx.fillStyle = '#ff4400';
+      ctx.fillStyle = '#ff2a4a';
       ctx.fillRect(b.x, b.y, b.w, b.h);
-      ctx.fillStyle = '#ffaa44';
+      ctx.fillStyle = '#ff9ab0';
       ctx.fillRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
     }
   });
@@ -1506,7 +1560,11 @@ function draw() {
 
   ctx.restore(); // end screen shake — HUD drawn in stable space
 
-  // J4 — red damage flash (vignette-ish full overlay)
+  // G5/G2 — atmosphere tint then vignette (screen space, over the whole scene)
+  drawMissionTint();
+  drawVignette();
+
+  // J4 — red damage flash
   if (playerHitFlash > 0) {
     ctx.fillStyle = `rgba(200,0,0,${playerHitFlash * 0.35})`;
     ctx.fillRect(0, 0, W, H);
@@ -1570,8 +1628,13 @@ function drawTutorialHints() {
 }
 
 function drawHUD() {
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  // G4 — panel with arcade accent bar
+  ctx.fillStyle = 'rgba(6,10,8,0.82)';
   ctx.fillRect(0, H - 38, W, 38);
+  ctx.fillStyle = '#3a5a2a';
+  ctx.fillRect(0, H - 39, W, 1);
+  ctx.fillStyle = '#8fd86a';
+  ctx.fillRect(0, H - 40, W, 1);
 
   // HP hearts
   ctx.font = '8px monospace';
