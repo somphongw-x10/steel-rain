@@ -1,32 +1,6 @@
 // Steel Rain - Vietnam '69
 // Vertical Shoot 'em Up — uses real pixel art assets
 
-// ========================
-// GAMEMONETIZE SDK
-// ========================
-function showGameOverAd() {
-  try {
-    if (window.sdk) window.sdk.showBanner();
-  } catch(e) {}
-}
-
-// Pause/resume bridge — called by SDK onEvent in index.html while ad plays
-let adPlaying = false;       // freezes update loop
-let awaitingResume = false;  // ad ended, waiting for player to press P
-window.gmAdPause = function () {
-  adPlaying = true;
-  awaitingResume = false;
-  if (currentMusic && music[currentMusic]) music[currentMusic].pause();
-};
-window.gmAdResume = function () {
-  // Ads only fire at non-gameplay transitions (start / win / lose), so there is
-  // never active gameplay to manually resume into — auto-resume to the next
-  // screen and let the player interact with it directly.
-  adPlaying = false;
-  awaitingResume = false;
-  if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(() => {});
-};
-
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const W = 320, H = 480;
@@ -1154,7 +1128,6 @@ function update(dt) {
           if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
           currentMusic = null;
           playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = false;
-          showGameOverAd();
           state = STATE.NAME_ENTRY;
         }
         continue;
@@ -1345,7 +1318,6 @@ function update(dt) {
       if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
       currentMusic = null;
       playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = true;
-      showGameOverAd();
       state = STATE.NAME_ENTRY;
     }
   }
@@ -1721,16 +1693,6 @@ function draw() {
     ctx.fillText('Press P to continue', W / 2 - 55, H / 2 + 20);
   }
 
-  if (awaitingResume) {
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#fff';
-    ctx.font = '20px monospace';
-    ctx.fillText('PAUSED', W / 2 - 40, H / 2);
-    ctx.fillStyle = '#ffd24a';
-    ctx.font = '11px monospace';
-    ctx.fillText('Press P to resume', W / 2 - 56, H / 2 + 22);
-  }
 }
 
 // Contextual onboarding — timed hints during the first mission only.
@@ -2074,17 +2036,6 @@ function drawNameEntry() {
 document.addEventListener('keydown', e => {
   keys[e.key] = true;
 
-  // Ad finished — wait for P to resume
-  if (awaitingResume) {
-    if (e.key === 'p' || e.key === 'P') {
-      awaitingResume = false;
-      adPlaying = false;
-      if (currentMusic && music[currentMusic]) music[currentMusic].play().catch(() => {});
-    }
-    e.preventDefault();
-    return;
-  }
-
   // Name entry handling
   if (state === STATE.NAME_ENTRY) {
     if (!nameConfirmed) {
@@ -2143,9 +2094,7 @@ document.addEventListener('keyup', e => { keys[e.key] = false; });
 function frame(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
-  if (adPlaying) {
-    // freeze game while ad is playing
-  } else if (hitStop > 0) {
+  if (hitStop > 0) {
     hitStop -= dt;
   } else {
     update(dt);

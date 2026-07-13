@@ -10,38 +10,6 @@
 <meta property="og:url"         content="https://game.no-os.com/">
 <meta property="og:type"        content="website">
 <meta name="twitter:card"       content="summary_large_image">
-<!-- GameMonetize SDK — official loader pattern -->
-<script>
-  window.SDK_OPTIONS = {
-    gameId: '3r1ki0k435jc3j6dvoweeps7fvs0p8m8',
-    onEvent: function (event) {
-      switch (event.name) {
-        case 'SDK_READY':
-          window.gmReady = true;
-          console.log('[GM] SDK ready');
-          // Show the first ad right after the game loads (tester requirement)
-          try { window.sdk.showBanner(); } catch (e) {}
-          break;
-        case 'SDK_GAME_PAUSE':
-          console.log('[GM] ad started');
-          if (window.gmAdPause) window.gmAdPause();
-          break;
-        case 'SDK_GAME_START':
-          console.log('[GM] ad finished');
-          if (window.gmAdResume) window.gmAdResume();
-          break;
-      }
-    }
-  };
-  (function (a, b, c) {
-    var d = a.getElementsByTagName(b)[0];
-    a.getElementById(c) ||
-      ((a = a.createElement(b)),
-      (a.id = c),
-      (a.src = 'https://api.gamemonetize.com/sdk.js'),
-      d.parentNode.insertBefore(a, d));
-  })(document, 'script', 'gamemonetize-sdk');
-</script>
 <!-- Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-5LXLVZNEYE"></script>
 <script>
