@@ -327,7 +327,7 @@ function drawPlayerHeli(cx, cy, alpha = 1) {
 // ========================
 // SPRITE HELPER
 // ========================
-function drawSprite(key, x, y, w, h, flipX = false, angle = 0, rim = false) {
+function drawSprite(key, x, y, w, h, flipX = false, angle = 0, rim = false, flash = 0) {
   const img = imgs[key];
   if (!img || !img.complete || !img.naturalWidth) return false;
   ctx.save();
@@ -340,6 +340,12 @@ function drawSprite(key, x, y, w, h, flipX = false, angle = 0, rim = false) {
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 0.32;
     ctx.drawImage(img, -w / 2, -h / 2 - 1, w, h);
+  }
+  if (flash > 0) {
+    // Damage flash — additive re-draw (cheap; avoids Safari-slow ctx.filter)
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = flash;
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
   }
   ctx.restore();
   return true;
@@ -450,7 +456,7 @@ class Terrain {
     // top = ข้างหน้า (worldY สูง = ยิ่งบินไปข้างหน้า)
     // bottom = ข้างหลัง (worldY ต่ำ = ผ่านมาแล้ว)
     // formula: worldY = scrollY + H - sy
-    const STRIP = 3;
+    const STRIP = 4;
     for (let sy = 0; sy <= H; sy += STRIP) {
       const worldY = scrollY + H - sy;
       ctx.fillStyle = this._groundColor(worldY);
@@ -463,18 +469,28 @@ class Terrain {
 
   // Water detail: wave crests, sparkles, and bank edges in river zones
   _drawWater(scrollY) {
+    // Cheap early-out: sample a few rows; if no river on screen, skip entirely
+    let anyRiver = false;
+    for (let s = 0; s <= H; s += 80) {
+      if ((this._zoneBlend(scrollY + H - s).river || 0) > 0) { anyRiver = true; break; }
+    }
+    if (!anyRiver) return;
+
     const t = Date.now() * 0.001;
-    for (let sy = 0; sy < H; sy += 4) {
+    const tf = Math.floor(t * 3);
+    const STEP = 8;
+    let prevRiver = 0;
+    for (let sy = 0; sy < H; sy += STEP) {
       const worldY = scrollY + H - sy;
       const river = this._zoneBlend(worldY).river || 0;
-      if (river <= 0) continue;
+      if (river <= 0) { prevRiver = 0; continue; }
 
-      // Bank edge — bright-ish shoreline where land meets water
-      const above = this._zoneBlend(scrollY + H - (sy - 4)).river || 0;
-      if (river > 0.15 && above <= 0.15) {
+      // Bank edge — shoreline where land meets water (reuse previous row's value)
+      if (river > 0.15 && prevRiver <= 0.15) {
         ctx.fillStyle = 'rgba(120,150,120,0.35)';
         ctx.fillRect(0, sy - 1, W, 2);
       }
+      prevRiver = river;
 
       // Wave crests — faint horizontal ripples that drift
       const wave = Math.sin(worldY * 0.28 + t * 2.2);
@@ -486,9 +502,8 @@ class Terrain {
       }
 
       // Sparkles — occasional glints on the surface
-      const sHash = Math.sin(worldY * 12.9898 + Math.floor(t * 3) * 7.233);
-      if (river > 0.5 && sHash > 0.94) {
-        const px = (Math.sin(worldY * 3.1 + Math.floor(t * 3)) * 0.5 + 0.5) * W;
+      if (river > 0.5 && Math.sin(worldY * 12.9898 + tf * 7.233) > 0.94) {
+        const px = (Math.sin(worldY * 3.1 + tf) * 0.5 + 0.5) * W;
         ctx.fillStyle = 'rgba(210,235,240,0.7)';
         ctx.fillRect(px, sy, 2, 2);
       }
@@ -1495,15 +1510,14 @@ function draw() {
       ctx.translate(-ecx, -ecy);
     }
     drawShadow(e.x + e.w / 2, e.y + e.h / 2, e.w, e.h);
-    // Damage flash: brighten the sprite itself (follows sprite shape, not a rect)
-    const flashB = e.flashTimer > 0 ? 1 + Math.min(0.9, e.flashTimer * 11) * 10 : 1;
-    if (flashB > 1) ctx.filter = `brightness(${flashB})`;
+    // Damage flash — additive (cheap; ctx.filter is very slow on Safari)
+    const flashA = e.flashTimer > 0 ? Math.min(0.85, e.flashTimer * 9) : 0;
 
     if (e.type === 'boat') {
       const f = (boatFrame() + (e.animOffset || 0)) % 4 + 1;
       const key = `boat${e.variant || 1}_${f}`;
       const flipX = e.dir < 0;
-      const drawn = drawSprite(key, e.x, e.y, e.w, e.h, flipX, 0, true);
+      const drawn = drawSprite(key, e.x, e.y, e.w, e.h, flipX, 0, true, flashA);
       if (!drawn) {
         ctx.fillStyle = '#4a6a30';
         ctx.fillRect(e.x + 4, e.y + 4, e.w - 8, e.h - 8);
@@ -1519,6 +1533,7 @@ function draw() {
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = 0.3;
         ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2 - 1, e.w, e.h);
+        if (flashA > 0) { ctx.globalAlpha = flashA; ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2, e.w, e.h); }
       }
       else { ctx.fillStyle = '#3a5c2a'; ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h); }
       ctx.restore();
@@ -1547,12 +1562,11 @@ function draw() {
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = 0.3;
         ctx.drawImage(img, -e.w / 2, -e.h / 2 - 1, e.w, e.h);
+        if (flashA > 0) { ctx.globalAlpha = flashA; ctx.drawImage(img, -e.w / 2, -e.h / 2, e.w, e.h); }
       }
       else { ctx.fillStyle = '#555'; ctx.fillRect(-e.w / 2, -e.h / 2, e.w, e.h); }
       ctx.restore();
     }
-
-    if (flashB > 1) ctx.filter = 'none';
 
     // N2 — enemy muzzle flash toward the player
     if (e.muzzle > 0) {
@@ -1595,14 +1609,13 @@ function draw() {
       ctx.restore();
     }
     drawShadow(boss.x + boss.w / 2, boss.y + boss.h / 2, boss.w, boss.h, 0.3);
-    const bossFlashB = boss.flashTimer > 0 ? 1 + Math.min(0.9, boss.flashTimer * 9) * 8 : 1;
-    if (bossFlashB > 1) ctx.filter = `brightness(${bossFlashB})`;
-    const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h, false, 0, true);
+    const bossFlashA = boss.flashTimer > 0 ? Math.min(0.85, boss.flashTimer * 8) : 0;
+    const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h, false, 0, true, bossFlashA);
     if (!drawn) {
       ctx.fillStyle = '#5a3a1a';
       ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
     }
-    if (bossFlashB > 1) { ctx.filter = 'none'; boss.flashTimer = Math.max(0, boss.flashTimer - 0.016); }
+    if (boss.flashTimer > 0) boss.flashTimer = Math.max(0, boss.flashTimer - 0.016);
     // Fire from damaged boss (phase 1)
     if (boss.phase === 1) {
       const ff = fireFrame();
