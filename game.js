@@ -335,6 +335,17 @@ function drawSprite(key, x, y, w, h, flipX = false, angle = 0) {
   return true;
 }
 
+// Soft drop shadow under a unit — grounds sprites above the terrain
+function drawShadow(cx, cy, w, h, alpha = 0.24) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(cx + 2, cy + h * 0.32, w * 0.42, h * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // Animated boat frame (0–3) based on time
 function boatFrame() { return Math.floor(Date.now() / 150) % 4 + 1; }
 function fireFrame(offset = 0) { return Math.floor((Date.now() + offset * 80) / 100) % 3 + 1; }
@@ -407,10 +418,10 @@ class Terrain {
     const n2 = Math.sin(worldY * 0.097 + 0.4) * 0.25 + 0.25;
     const n  = n1 * 0.7 + n2 * 0.3;
 
-    // สีป่า (jungle)
-    const jR =  12 + n * 14 | 0;
-    const jG =  52 + n * 36 | 0;
-    const jB =   8 + n *  8 | 0;
+    // สีป่า (jungle) — richer, wider tonal range for depth
+    const jR =  18 + n * 26 | 0;
+    const jG =  60 + n * 58 | 0;
+    const jB =  12 + n * 14 | 0;
 
     // สีแม่น้ำ (river) — shimmer ตาม time
     const shimmer = Math.sin(worldY * 0.15 + Date.now() * 0.002) * 0.12 + 0.88;
@@ -1438,6 +1449,7 @@ function draw() {
       ctx.scale(spawnScale, spawnScale);
       ctx.translate(-ecx, -ecy);
     }
+    drawShadow(e.x + e.w / 2, e.y + e.h / 2, e.w, e.h);
     // Damage flash: brighten the sprite itself (follows sprite shape, not a rect)
     const flashB = e.flashTimer > 0 ? 1 + Math.min(0.9, e.flashTimer * 11) * 10 : 1;
     if (flashB > 1) ctx.filter = `brightness(${flashB})`;
@@ -1527,6 +1539,7 @@ function draw() {
       ctx.strokeRect(boss.x - 3, boss.y - 3, boss.w + 6, boss.h + 6);
       ctx.restore();
     }
+    drawShadow(boss.x + boss.w / 2, boss.y + boss.h / 2, boss.w, boss.h, 0.3);
     const bossFlashB = boss.flashTimer > 0 ? 1 + Math.min(0.9, boss.flashTimer * 9) * 8 : 1;
     if (bossFlashB > 1) ctx.filter = `brightness(${bossFlashB})`;
     const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h);
@@ -1637,6 +1650,7 @@ function draw() {
   if (heliAlpha > 0) {
     const hcx = player.x + player.w / 2;
     const hcy = player.y + player.h / 2 + player.recoil;  // J5 — kickback
+    drawShadow(hcx, hcy, HELI_DST_W, HELI_DST_H, 0.28);
     // J5 — muzzle flash at the nose
     if (player.muzzle > 0) {
       ctx.save();
