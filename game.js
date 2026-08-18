@@ -317,13 +317,17 @@ function drawPlayerHeli(cx, cy, alpha = 1) {
   ctx.translate(Math.round(cx), Math.round(cy));
   if (tilt) ctx.rotate(tilt);
   ctx.drawImage(src, sx, 0, HELI_FRAME_W, HELI_FRAME_H, -HELI_DST_W / 2, -HELI_DST_H / 2, HELI_DST_W, HELI_DST_H);
+  // Rim light — bright top edge to separate from the ground
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha * 0.35;
+  ctx.drawImage(src, sx, 0, HELI_FRAME_W, HELI_FRAME_H, -HELI_DST_W / 2, -HELI_DST_H / 2 - 1, HELI_DST_W, HELI_DST_H);
   ctx.restore();
 }
 
 // ========================
 // SPRITE HELPER
 // ========================
-function drawSprite(key, x, y, w, h, flipX = false, angle = 0) {
+function drawSprite(key, x, y, w, h, flipX = false, angle = 0, rim = false) {
   const img = imgs[key];
   if (!img || !img.complete || !img.naturalWidth) return false;
   ctx.save();
@@ -331,6 +335,12 @@ function drawSprite(key, x, y, w, h, flipX = false, angle = 0) {
   if (angle) ctx.rotate(angle);
   if (flipX) ctx.scale(-1, 1);
   ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  if (rim) {
+    // Rim light — bright top edge to separate from the ground
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.32;
+    ctx.drawImage(img, -w / 2, -h / 2 - 1, w, h);
+  }
   ctx.restore();
   return true;
 }
@@ -418,16 +428,16 @@ class Terrain {
     const n2 = Math.sin(worldY * 0.097 + 0.4) * 0.25 + 0.25;
     const n  = n1 * 0.7 + n2 * 0.3;
 
-    // สีป่า (jungle) — richer, wider tonal range for depth
-    const jR =  18 + n * 26 | 0;
-    const jG =  60 + n * 58 | 0;
-    const jB =  12 + n * 14 | 0;
+    // สีป่า (jungle) — muted, war-torn: desaturated olive with a cool grey cast
+    const jR =  30 + n * 20 | 0;
+    const jG =  48 + n * 34 | 0;
+    const jB =  28 + n * 16 | 0;
 
-    // สีแม่น้ำ (river) — shimmer ตาม time
-    const shimmer = Math.sin(worldY * 0.15 + Date.now() * 0.002) * 0.12 + 0.88;
-    const wR = 14  * shimmer | 0;
-    const wG = (55 + n * 18) * shimmer | 0;
-    const wB = (105 + n * 30) * shimmer | 0;
+    // สีแม่น้ำ (river) — muddy, muted teal with time shimmer
+    const shimmer = Math.sin(worldY * 0.15 + Date.now() * 0.002) * 0.1 + 0.9;
+    const wR = 30  * shimmer | 0;
+    const wG = (60 + n * 16) * shimmer | 0;
+    const wB = (82 + n * 22) * shimmer | 0;
 
     // blend linear
     const fR = jR + (wR - jR) * r | 0;
@@ -446,8 +456,43 @@ class Terrain {
       ctx.fillStyle = this._groundColor(worldY);
       ctx.fillRect(0, sy, W, STRIP + 1);
     }
+    this._drawWater(scrollY);
     this._drawFoliage(scrollY);
     this._drawObjects(scrollY);
+  }
+
+  // Water detail: wave crests, sparkles, and bank edges in river zones
+  _drawWater(scrollY) {
+    const t = Date.now() * 0.001;
+    for (let sy = 0; sy < H; sy += 4) {
+      const worldY = scrollY + H - sy;
+      const river = this._zoneBlend(worldY).river || 0;
+      if (river <= 0) continue;
+
+      // Bank edge — bright-ish shoreline where land meets water
+      const above = this._zoneBlend(scrollY + H - (sy - 4)).river || 0;
+      if (river > 0.15 && above <= 0.15) {
+        ctx.fillStyle = 'rgba(120,150,120,0.35)';
+        ctx.fillRect(0, sy - 1, W, 2);
+      }
+
+      // Wave crests — faint horizontal ripples that drift
+      const wave = Math.sin(worldY * 0.28 + t * 2.2);
+      if (wave > 0.7) {
+        const alpha = (wave - 0.7) * 0.6 * river;
+        const wx = (Math.sin(worldY * 0.6) * 0.5 + 0.5) * W * 0.4;
+        ctx.fillStyle = `rgba(150,190,200,${alpha.toFixed(2)})`;
+        ctx.fillRect(wx, sy, W * 0.55, 1);
+      }
+
+      // Sparkles — occasional glints on the surface
+      const sHash = Math.sin(worldY * 12.9898 + Math.floor(t * 3) * 7.233);
+      if (river > 0.5 && sHash > 0.94) {
+        const px = (Math.sin(worldY * 3.1 + Math.floor(t * 3)) * 0.5 + 0.5) * W;
+        ctx.fillStyle = 'rgba(210,235,240,0.7)';
+        ctx.fillRect(px, sy, 2, 2);
+      }
+    }
   }
 
   _drawFoliage(scrollY) {
@@ -1458,7 +1503,7 @@ function draw() {
       const f = (boatFrame() + (e.animOffset || 0)) % 4 + 1;
       const key = `boat${e.variant || 1}_${f}`;
       const flipX = e.dir < 0;
-      const drawn = drawSprite(key, e.x, e.y, e.w, e.h, flipX);
+      const drawn = drawSprite(key, e.x, e.y, e.w, e.h, flipX, 0, true);
       if (!drawn) {
         ctx.fillStyle = '#4a6a30';
         ctx.fillRect(e.x + 4, e.y + 4, e.w - 8, e.h - 8);
@@ -1469,7 +1514,12 @@ function draw() {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(hullAngle);
-      if (tankHullCanvas) ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2, e.w, e.h);
+      if (tankHullCanvas) {
+        ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2, e.w, e.h);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.3;
+        ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2 - 1, e.w, e.h);
+      }
       else { ctx.fillStyle = '#3a5c2a'; ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h); }
       ctx.restore();
 
@@ -1492,7 +1542,12 @@ function draw() {
       ctx.translate(e.x + e.w / 2, e.y + e.h / 2);
       ctx.rotate(angle);
       const img = imgs[key];
-      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, -e.w / 2, -e.h / 2, e.w, e.h);
+      if (img && img.complete && img.naturalWidth) {
+        ctx.drawImage(img, -e.w / 2, -e.h / 2, e.w, e.h);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.3;
+        ctx.drawImage(img, -e.w / 2, -e.h / 2 - 1, e.w, e.h);
+      }
       else { ctx.fillStyle = '#555'; ctx.fillRect(-e.w / 2, -e.h / 2, e.w, e.h); }
       ctx.restore();
     }
@@ -1542,7 +1597,7 @@ function draw() {
     drawShadow(boss.x + boss.w / 2, boss.y + boss.h / 2, boss.w, boss.h, 0.3);
     const bossFlashB = boss.flashTimer > 0 ? 1 + Math.min(0.9, boss.flashTimer * 9) * 8 : 1;
     if (bossFlashB > 1) ctx.filter = `brightness(${bossFlashB})`;
-    const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h);
+    const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h, false, 0, true);
     if (!drawn) {
       ctx.fillStyle = '#5a3a1a';
       ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
