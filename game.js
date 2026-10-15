@@ -675,6 +675,20 @@ let nameCursor = 0;
 let nameConfirmed = false;
 let nameEntryFromClear = false; // true = mission clear, false = game over
 
+// Personal best (local, survives reloads)
+let bestScore = 0;
+try { bestScore = parseInt(localStorage.getItem('sr69_best'), 10) || 0; } catch {}
+let newBest = false;
+function enterNameEntry(fromClear) {
+  playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = fromClear;
+  newBest = score > bestScore;
+  if (newBest) {
+    bestScore = score;
+    try { localStorage.setItem('sr69_best', String(bestScore)); } catch {}
+  }
+  state = STATE.NAME_ENTRY;
+}
+
 // ========================
 // FIREBASE GLOBAL LEADERBOARD
 // ========================
@@ -729,15 +743,12 @@ fetchBoard();
 let shareContainer = null;
 function createShareButtons(name, sc) {
   removeShareButtons();
-  const rect = canvas.getBoundingClientRect();
   shareContainer = document.createElement('div');
   shareContainer.id = 'share-btns';
   Object.assign(shareContainer.style, {
     position: 'fixed',
-    left: rect.left + 'px',
-    top: (rect.top + rect.height * 0.78) + 'px',
-    width: rect.width + 'px',
     display: 'flex',
+    flexWrap: 'wrap',
     gap: '10px',
     justifyContent: 'center',
     pointerEvents: 'auto',
@@ -763,7 +774,7 @@ function createShareButtons(name, sc) {
   const lineBtn = document.createElement('button');
   lineBtn.textContent = '💬 LINE';
   styleShareBtn(lineBtn, '#06c755');
-  lineBtn.onclick = () => window.open(`https://line.me/R/msg/text/?${encodedText}`, '_blank');
+  lineBtn.onclick = () => window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lineText)}`, '_blank');
 
   const retryBtn = document.createElement('button');
   retryBtn.textContent = '🔄 Play Again';
@@ -772,7 +783,19 @@ function createShareButtons(name, sc) {
 
   shareContainer.append(fbBtn, lineBtn, retryBtn);
   document.body.appendChild(shareContainer);
+  placeShareButtons();
 }
+// Keep the share bar anchored to the canvas when the window resizes / rotates
+function placeShareButtons() {
+  if (!shareContainer) return;
+  const rect = canvas.getBoundingClientRect();
+  Object.assign(shareContainer.style, {
+    left: rect.left + 'px',
+    top: (rect.top + rect.height * 0.78) + 'px',
+    width: rect.width + 'px',
+  });
+}
+window.addEventListener('resize', placeShareButtons);
 function styleShareBtn(btn, bg) {
   Object.assign(btn.style, {
     background: bg, color: '#fff', border: 'none',
@@ -1128,6 +1151,13 @@ function update(dt) {
   if ((keys['ArrowRight'] || keys['d']) && player.x + player.w < W) { player.x += player.speed * dt; moveDir = 1; }
   if ((keys['ArrowUp'] || keys['w']) && player.y > 20) player.y -= player.speed * dt;
   if ((keys['ArrowDown'] || keys['s']) && player.y + player.h < H - 10) player.y += player.speed * dt;
+  // Touch — relative drag (finger never covers the heli)
+  if (touch.dx || touch.dy) {
+    player.x = Math.max(0, Math.min(W - player.w, player.x + touch.dx));
+    player.y = Math.max(20, Math.min(H - 10 - player.h, player.y + touch.dy));
+    if (Math.abs(touch.dx) > 0.4) moveDir = Math.sign(touch.dx);
+    touch.dx = touch.dy = 0;
+  }
   // N1 — bank toward move direction, ease back to level
   player.tilt = (player.tilt || 0) + (moveDir * 0.32 - (player.tilt || 0)) * Math.min(1, dt * 10);
 
@@ -1138,13 +1168,14 @@ function update(dt) {
   screenShakeTrauma      = Math.max(0, screenShakeTrauma - dt * 2.8);
   tickHeliAnim(dt);
 
-  if (keys['z'] || keys[' ']) firePlayerBullet();
+  if (keys['z'] || keys[' '] || touch.firing) firePlayerBullet();
   if (keys['x']) dropBomb();
-  if (keys['r'] && player.ammo < player.maxAmmo) {
+  if ((keys['r'] || touch.reload) && player.ammo < player.maxAmmo) {
     player.ammo = player.maxAmmo;
     player.heatTimer = 0;
     playSfx('collect', 0.3);
   }
+  touch.reload = false;
 
   // Slow ammo regen
   if (player.ammo < player.maxAmmo) {
@@ -1198,8 +1229,7 @@ function update(dt) {
           playSfx('heli_stop');
           if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
           currentMusic = null;
-          playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = false;
-          state = STATE.NAME_ENTRY;
+          enterNameEntry(false);
         }
         continue;
       }
@@ -1388,8 +1418,7 @@ function update(dt) {
       playSfx('heli_stop');
       if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
       currentMusic = null;
-      playerName = ['A','A','A']; nameCursor = 0; nameConfirmed = false; nameEntryFromClear = true;
-      state = STATE.NAME_ENTRY;
+      enterNameEntry(true);
     }
   }
   if (warningTimer > 0) warningTimer -= dt;
@@ -1760,6 +1789,7 @@ function draw() {
   }
 
   drawHUD();
+  drawTouchButtons();
   drawTutorialHints();
   drawMissionCard();   // M2/M4
   drawWarningBanner(); // M3
@@ -1772,7 +1802,8 @@ function draw() {
     ctx.fillText('PAUSED', W / 2 - 40, H / 2);
     ctx.fillStyle = '#aaa';
     ctx.font = '10px monospace';
-    ctx.fillText('Press P to continue', W / 2 - 55, H / 2 + 20);
+    const resumeMsg = isTouch ? 'Tap to continue' : 'Press P to continue';
+    ctx.fillText(resumeMsg, W / 2 - ctx.measureText(resumeMsg).width / 2, H / 2 + 20);
   }
 
 }
@@ -1785,9 +1816,15 @@ const TUTORIAL_HINTS = [
   { t: 8.5, until: 12.5, text: 'AMMO overheats — press R to reload instantly' },
   { t: 12.5, until: 16.5, text: 'Press X to drop a bomb (clears the screen)' },
 ];
+const TOUCH_HINTS = [
+  { t: 0.5, until: 4.5,  text: 'DRAG anywhere to fly' },
+  { t: 4.5, until: 8.5,  text: 'Hold your finger down to fire' },
+  { t: 8.5, until: 12.5, text: 'AMMO overheats — tap RELOAD' },
+  { t: 12.5, until: 16.5, text: 'Tap BOMB to clear the screen' },
+];
 function drawTutorialHints() {
   if (state !== STATE.PLAYING || mission !== 1) return;
-  const hint = TUTORIAL_HINTS.find(h => missionTimer >= h.t && missionTimer < h.until);
+  const hint = (isTouch ? TOUCH_HINTS : TUTORIAL_HINTS).find(h => missionTimer >= h.t && missionTimer < h.until);
   if (!hint) return;
   // fade in/out at the edges of each window
   const inFade = Math.min(1, (missionTimer - hint.t) / 0.4);
@@ -1962,7 +1999,8 @@ function drawTitle() {
   // Difficulty selector
   ctx.fillStyle = '#aaa';
   ctx.font = '8px monospace';
-  ctx.fillText('DIFFICULTY   (< > to change)', W / 2 - 78, 250);
+  const diffMsg = isTouch ? 'DIFFICULTY   (tap to choose)' : 'DIFFICULTY   (< > to change)';
+  ctx.fillText(diffMsg, W / 2 - ctx.measureText(diffMsg).width / 2, 250);
 
   const boxW = 66, gap = 6, totalW = boxW * 3 + gap * 2;
   let bx = W / 2 - totalW / 2;
@@ -1987,12 +2025,24 @@ function drawTitle() {
 
   ctx.fillStyle = '#fff';
   ctx.font = '10px monospace';
-  if (Math.floor(Date.now() / 550) % 2) ctx.fillText('PRESS ENTER TO START', W / 2 - 68, 318);
+  const startMsg = isTouch ? 'TAP TO START' : 'PRESS ENTER TO START';
+  if (Math.floor(Date.now() / 550) % 2) ctx.fillText(startMsg, W / 2 - ctx.measureText(startMsg).width / 2, 318);
 
   ctx.fillStyle = '#888';
   ctx.font = '8px monospace';
-  ctx.fillText('WASD: Move   Z/SPACE: Gun   X: BOMB   R: Reload', W / 2 - 96, 348);
-  ctx.fillText('P: Pause', W / 2 - 24, 362);
+  if (isTouch) {
+    ctx.fillText('DRAG: Move + auto-fire   BOMB / RELOAD: buttons', W / 2 - 104, 348);
+  } else {
+    ctx.fillText('WASD: Move   Z/SPACE: Gun   X: BOMB   R: Reload', W / 2 - 96, 348);
+    ctx.fillText('P: Pause', W / 2 - 24, 362);
+  }
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#ffd860';
+    ctx.font = 'bold 9px monospace';
+    const best = `YOUR BEST  ${bestScore.toLocaleString()}`;
+    ctx.fillText(best, W / 2 - ctx.measureText(best).width / 2, 412);
+  }
 
   ctx.fillStyle = '#4a6';
   ctx.font = '7px monospace';
@@ -2023,6 +2073,16 @@ function drawNameEntry() {
   ctx.font = 'bold 13px monospace';
   const scoreLabel = `SCORE: ${score}`;
   ctx.fillText(scoreLabel, W / 2 - ctx.measureText(scoreLabel).width / 2, 70);
+  ctx.font = 'bold 9px monospace';
+  if (newBest) {
+    ctx.fillStyle = Math.floor(Date.now() / 300) % 2 ? '#ffd860' : '#ff8040';
+    const nb = '★ NEW PERSONAL BEST! ★';
+    ctx.fillText(nb, W / 2 - ctx.measureText(nb).width / 2, 84);
+  } else {
+    ctx.fillStyle = '#887';
+    const bs = `BEST: ${bestScore}`;
+    ctx.fillText(bs, W / 2 - ctx.measureText(bs).width / 2, 84);
+  }
 
   if (!nameConfirmed) {
     // Name entry prompt
@@ -2031,7 +2091,8 @@ function drawNameEntry() {
     ctx.fillText('ENTER YOUR NAME (3 CHARS)', W / 2 - 74, 108);
     ctx.fillStyle = '#888';
     ctx.font = '8px monospace';
-    ctx.fillText('Arrow keys or A-Z / 0-9  |  ENTER to confirm', W / 2 - 100, 122);
+    const howTo = isTouch ? 'Tap top / bottom of a letter to change it' : 'Arrow keys or A-Z / 0-9  |  ENTER to confirm';
+    ctx.fillText(howTo, W / 2 - ctx.measureText(howTo).width / 2, 122);
 
     // 3 character boxes
     const boxW = 36, boxH = 46, gap = 10;
@@ -2053,6 +2114,12 @@ function drawNameEntry() {
       ctx.fillStyle = active ? '#ff8' : '#ccc';
       ctx.font = `bold 28px monospace`;
       ctx.fillText(playerName[i], bx + boxW / 2 - ctx.measureText(playerName[i]).width / 2, boxY + 33);
+      if (isTouch) {
+        ctx.fillStyle = active ? '#ff8' : '#666';
+        ctx.font = '8px monospace';
+        ctx.fillText('▲', bx + boxW / 2 - 4, boxY + 9);
+        ctx.fillText('▼', bx + boxW / 2 - 4, boxY + boxH - 2);
+      }
       // Cursor blink under active
       if (active && Math.floor(Date.now() / 400) % 2) {
         ctx.fillStyle = '#ff8';
@@ -2060,13 +2127,26 @@ function drawNameEntry() {
       }
     }
 
+    if (isTouch) {
+      // OK button
+      const b = NAME_OK_BTN;
+      ctx.fillStyle = '#2a4a1a';
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.strokeStyle = '#8fd86a';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+      ctx.fillStyle = '#cfffa8';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText('OK', b.x + b.w / 2 - ctx.measureText('OK').width / 2, b.y + 14);
+    } else {
     // Arrow hint
     ctx.fillStyle = '#666';
     ctx.font = '8px monospace';
     ctx.fillText('UP/DOWN: Change char   LEFT/RIGHT: Select', W / 2 - 90, 198);
+    }
 
     // Enter hint blink
-    if (Math.floor(Date.now() / 600) % 2) {
+    if (!isTouch && Math.floor(Date.now() / 600) % 2) {
       ctx.fillStyle = '#aaa';
       ctx.font = '9px monospace';
       ctx.fillText('ENTER = Confirm', W / 2 - 40, 218);
@@ -2075,7 +2155,7 @@ function drawNameEntry() {
 
   // Leaderboard
   const board = loadBoard();
-  const boardY = nameConfirmed ? 90 : 240;
+  const boardY = nameConfirmed ? 104 : 240;
 
   ctx.fillStyle = '#f80';
   ctx.font = 'bold 9px monospace';
@@ -2139,15 +2219,10 @@ document.addEventListener('keydown', e => {
         if (nameCursor > 0) nameCursor--;
         playerName[nameCursor] = 'A';
       } else if (e.key === 'Enter') {
-        // Confirm name
-        nameConfirmed = true;
-        playSfx('ui_confirm');   // A4
-        const name = playerName.join('');
-        addToBoard(name, score, mission);
-        createShareButtons(name, score);
+        confirmName();
       }
     } else {
-      // After confirm: Enter = retry (ad already shown on win/lose event)
+      // After confirm: Enter = retry
       if (e.key === 'Enter') {
         removeShareButtons();
         initGame();
@@ -2157,18 +2232,172 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  if (e.key === 'p' || e.key === 'P') {
-    if (state === STATE.PLAYING) state = STATE.PAUSED;
-    else if (state === STATE.PAUSED) state = STATE.PLAYING;
-  }
+  if (e.key === 'p' || e.key === 'P') togglePause();
   if (state === STATE.TITLE) {
     if (e.key === 'ArrowLeft')  { diffIndex = (diffIndex + DIFF_ORDER.length - 1) % DIFF_ORDER.length; playSfx('ui_move', 0.15); } // A4
     if (e.key === 'ArrowRight') { diffIndex = (diffIndex + 1) % DIFF_ORDER.length; playSfx('ui_move', 0.15); }                     // A4
-    if (e.key === 'Enter') { playSfx('coin_in'); startFade(() => initGame()); }   // A4/M1
+    if (e.key === 'Enter') startFromTitle();
   }
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function confirmName() {
+  nameConfirmed = true;
+  playSfx('ui_confirm');   // A4
+  const name = playerName.join('');
+  addToBoard(name, score, mission);
+  createShareButtons(name, score);
+}
+function startFromTitle() {
+  if (!fade.midDone) return;   // already fading into the game
+  playSfx('coin_in');          // A4
+  startFade(() => initGame()); // M1
+}
+function setPaused(paused) {
+  if (paused && state === STATE.PLAYING) {
+    state = STATE.PAUSED;
+    if (heliLoop) heliLoop.pause();
+  } else if (!paused && state === STATE.PAUSED) {
+    state = STATE.PLAYING;
+    keys = {};
+    touch.dx = touch.dy = 0; touch.firing = false; touch.movePointer = null;
+    if (heliLoop) heliLoop.play().catch(() => {});
+  }
+}
+function togglePause() { setPaused(state === STATE.PLAYING); }
+
+// ========================
+// TOUCH / POINTER INPUT (mobile)
+// ========================
+let isTouch = false;
+const touch = { movePointer: null, lastX: 0, lastY: 0, dx: 0, dy: 0, firing: false, reload: false };
+const TOUCH_SENS = 1.15;
+const TOUCH_BTNS = {
+  bomb:   { x: W - 36, y: H - 82,  r: 22, label: 'BOMB' },
+  reload: { x: W - 30, y: H - 132, r: 15, label: 'RLD' },
+  pause:  { x: W - 18, y: 36,      r: 11, label: 'II' },
+};
+const NAME_OK_BTN = { x: W / 2 - 40, y: 204, w: 80, h: 20 };
+
+function toGame(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+}
+function hitBtn(b, p) { return Math.hypot(p.x - b.x, p.y - b.y) <= b.r + 8; }
+
+function drawTouchButtons() {
+  if (!isTouch || state !== STATE.PLAYING) return;
+  ctx.save();
+  for (const [key, b] of Object.entries(TOUCH_BTNS)) {
+    const dim = (key === 'bomb' && (player.bombs <= 0 || player.bombCooldown > 0)) ||
+                (key === 'reload' && player.ammo >= player.maxAmmo);
+    ctx.globalAlpha = dim ? 0.3 : 0.7;
+    ctx.fillStyle = key === 'bomb' ? 'rgba(120,50,0,0.6)' : 'rgba(10,20,10,0.6)';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = key === 'bomb' ? '#fa0' : '#8fd86a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${key === 'bomb' ? 8 : 7}px monospace`;
+    ctx.fillText(b.label, b.x - ctx.measureText(b.label).width / 2, b.y + 3);
+    if (key === 'bomb') {
+      ctx.font = '7px monospace';
+      const n = `x${player.bombs}`;
+      ctx.fillText(n, b.x - ctx.measureText(n).width / 2, b.y + 12);
+    }
+  }
+  ctx.restore();
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') isTouch = true;
+  e.preventDefault();
+  const p = toGame(e);
+  if (state === STATE.PLAYING) {
+    if (hitBtn(TOUCH_BTNS.pause, p))  { setPaused(true); return; }
+    if (hitBtn(TOUCH_BTNS.bomb, p))   { dropBomb(); return; }
+    if (hitBtn(TOUCH_BTNS.reload, p)) { touch.reload = true; return; }
+    if (touch.movePointer === null) {
+      touch.movePointer = e.pointerId;
+      touch.lastX = p.x; touch.lastY = p.y;
+      touch.firing = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerId !== touch.movePointer) return;
+  e.preventDefault();
+  const p = toGame(e);
+  if (state === STATE.PLAYING) {
+    touch.dx += (p.x - touch.lastX) * TOUCH_SENS;
+    touch.dy += (p.y - touch.lastY) * TOUCH_SENS;
+  }
+  touch.lastX = p.x; touch.lastY = p.y;
+}, { passive: false });
+
+function endPointer(e) {
+  if (e.pointerId === touch.movePointer) { touch.movePointer = null; touch.firing = false; }
+}
+canvas.addEventListener('pointercancel', endPointer);
+
+// Menu taps fire on pointerup — that counts as a user gesture for audio on iOS
+canvas.addEventListener('pointerup', e => {
+  const wasMove = e.pointerId === touch.movePointer;
+  endPointer(e);
+  if (wasMove) return;
+  unlockAudio();
+  const p = toGame(e);
+  if (state === STATE.TITLE) {
+    // Difficulty boxes (same layout as drawTitle)
+    const boxW = 66, gap = 6, totalW = boxW * 3 + gap * 2;
+    const x0 = W / 2 - totalW / 2;
+    if (p.y >= 250 && p.y <= 286 && p.x >= x0 && p.x <= x0 + totalW) {
+      const i = Math.min(2, Math.floor((p.x - x0) / (boxW + gap)));
+      if (i !== diffIndex) { diffIndex = i; playSfx('ui_move', 0.15); }
+      return;
+    }
+    startFromTitle();
+  } else if (state === STATE.PAUSED) {
+    setPaused(false);
+  } else if (state === STATE.NAME_ENTRY && !nameConfirmed) {
+    const boxW = 36, boxH = 46, gap = 10, boxY = 136;
+    const startX = (W - (boxW * 3 + gap * 2)) / 2;
+    for (let i = 0; i < 3; i++) {
+      const bx = startX + i * (boxW + gap);
+      if (p.x >= bx - 4 && p.x <= bx + boxW + 4 && p.y >= boxY - 10 && p.y <= boxY + boxH + 10) {
+        nameCursor = i;
+        const idx = CHARS.indexOf(playerName[i]);
+        const step = p.y < boxY + boxH / 2 ? 1 : -1;
+        playerName[i] = CHARS[(idx + step + CHARS.length) % CHARS.length];
+        playSfx('ui_move', 0.15);
+        return;
+      }
+    }
+    const b = NAME_OK_BTN;
+    if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y - 4 && p.y <= b.y + b.h + 4) confirmName();
+  }
+});
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// Auto-pause when the tab is hidden or the window loses focus (portal requirement)
+function releaseAllInput() {
+  keys = {};
+  touch.movePointer = null; touch.firing = false; touch.dx = touch.dy = 0;
+}
+window.addEventListener('blur', () => { releaseAllInput(); setPaused(true); });
+document.addEventListener('visibilitychange', () => {
+  const track = currentMusic && music[currentMusic];
+  if (document.hidden) {
+    releaseAllInput();
+    setPaused(true);
+    if (track) track.pause();
+  } else if (track && audioUnlocked) {
+    track.play().catch(() => {});
+  }
+});
 
 // ========================
 // MAIN LOOP
@@ -2211,6 +2440,6 @@ function unlockAudio() {
   playMusic('menu');
 }
 document.addEventListener('keydown', unlockAudio, { once: false });
-canvas.addEventListener('click', unlockAudio, { once: true });
+canvas.addEventListener('click', unlockAudio);
 
 requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(frame); });
