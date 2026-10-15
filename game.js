@@ -7,6 +7,8 @@ const W = 320, H = 480;
 // Canvas จริง 480×720 → scale 1.5× ให้ทุก draw call ใช้พิกัด 320×480 เหมือนเดิม
 // แต่ render ที่ความละเอียดสูงกว่า → ตัวหนังสือชัด ไม่เบลอ
 ctx.scale(1.5, 1.5);
+GFX.installPixelFont(ctx);   // 16-bit bitmap font for every fillText (see gfx.js)
+function fillCentered(text, y) { ctx.fillText(text, Math.round(W / 2 - ctx.measureText(text).width / 2), y); }
 
 // ========================
 // AUDIO ENGINE
@@ -257,17 +259,6 @@ function removeWhiteBg(srcImg, threshold = 230) {
   return oc;
 }
 
-// Rocks — Rock1_1 … Rock8_1  (64×64 per image)
-const rockCanvases = [];  // [0..7] processed canvases
-(function() {
-  for (let n = 1; n <= 8; n++) {
-    const idx = n - 1;
-    const img = new Image();
-    img.onload = () => { rockCanvases[idx] = removeWhiteBg(img, 220); };
-    img.src = `assets/PNG/Objects_separately/Rock${n}_1.png`;
-  }
-})();
-
 // Tank sprites (Color_C = green/jungle camo, Hull 256×256, Gun 94×212)
 let tankHullCanvas = null, tankGunCanvas = null;
 (function() {
@@ -277,25 +268,6 @@ let tankHullCanvas = null, tankGunCanvas = null;
   const gImg = new Image();
   gImg.onload = () => { tankGunCanvas = removeWhiteBg(gImg, 240); };
   gImg.src = 'assets/PNG/tank-assets/PNG/Weapon_Color_A/Gun_01.png';
-})();
-
-// Plants sprite sheet  768×432 — grid 12 cols × 6 rows, cell 64×72
-// เลือกเฉพาะ cell ที่เหมาะกับป่า/ทุ่งเวียดนาม
-let plantsCanvas = null;
-const PLANT_CW = 64, PLANT_CH = 72;
-// cell พิกัด (col, row) → (srcX, srcY) ที่ต้องการใช้
-const PLANT_CELLS = [
-  [0, 2],  // 0: flat 2-leaf bush (ป่า)
-  [0, 3],  // 1: wide leaf cluster
-  [1, 2],  // 2: small round green bush
-  [1, 3],  // 3: oval green shrub
-  [0, 5],  // 4: aloe / grass cluster
-  [1, 5],  // 5: small weeds/mushrooms
-];
-(function() {
-  const img = new Image();
-  img.onload = () => { plantsCanvas = removeWhiteBg(img, 235); };
-  img.src = 'assets/PNG/Plants.png';
 })();
 
 let heliAnimFrame = 0;
@@ -322,11 +294,9 @@ function drawPlayerHeli(cx, cy, alpha = 1) {
   const tilt = (player && player.tilt) || 0;
   ctx.translate(Math.round(cx), Math.round(cy));
   if (tilt) ctx.rotate(tilt);
-  ctx.drawImage(src, sx, 0, HELI_FRAME_W, HELI_FRAME_H, -HELI_DST_W / 2, -HELI_DST_H / 2, HELI_DST_W, HELI_DST_H);
-  // Rim light — bright top edge to separate from the ground
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = alpha * 0.35;
-  ctx.drawImage(src, sx, 0, HELI_FRAME_W, HELI_FRAME_H, -HELI_DST_W / 2, -HELI_DST_H / 2 - 1, HELI_DST_W, HELI_DST_H);
+  // key includes whether the white background is stripped yet, so the cache never keeps the raw sheet
+  blitPixel(src, `heli${heliCanvas ? '' : '_raw'}_${heliAnimFrame}`, -HELI_DST_W / 2, -HELI_DST_H / 2,
+            HELI_DST_W, HELI_DST_H, 0, true, sx, 0, HELI_FRAME_W, HELI_FRAME_H, 14);
   ctx.restore();
 }
 
@@ -340,21 +310,43 @@ function drawSprite(key, x, y, w, h, flipX = false, angle = 0, rim = false, flas
   ctx.translate(x + w / 2, y + h / 2);
   if (angle) ctx.rotate(angle);
   if (flipX) ctx.scale(-1, 1);
-  ctx.drawImage(img, -w / 2, -h / 2, w, h);
-  if (rim) {
-    // Rim light — bright top edge to separate from the ground
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.32;
-    ctx.drawImage(img, -w / 2, -h / 2 - 1, w, h);
-  }
-  if (flash > 0) {
-    // Damage flash — additive re-draw (cheap; avoids Safari-slow ctx.filter)
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = flash;
-    ctx.drawImage(img, -w / 2, -h / 2, w, h);
-  }
+  blitPixel(img, key, -w / 2, -h / 2, w, h, flash, rim);
   ctx.restore();
   return true;
+}
+
+// Crisp pixel-art blit: the source is resampled once to its on-screen size, outlined,
+// and cached (GFX.pixelize). flash = white silhouette alpha, rim = lit top edge.
+// lift = drop-shadow offset for airborne units (silhouette cast onto the ground).
+function blitPixel(src, key, dx, dy, w, h, flash = 0, rim = false, sx = 0, sy = 0, sw = 0, sh = 0, lift = 0) {
+  sw = sw || src.naturalWidth || src.width;
+  sh = sh || src.naturalHeight || src.height;
+  const p = GFX.pixelize(src, sx, sy, sw, sh, w, h, key);
+  if (!p) { ctx.drawImage(src, sx, sy, sw, sh, dx, dy, w, h); return; }
+  const smooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  if (lift) {
+    const a = ctx.globalAlpha;
+    ctx.globalAlpha = a * 0.38;
+    ctx.drawImage(p.shadow, dx - 1 + lift * 0.7, dy - 1 + lift);
+    ctx.globalAlpha = a;
+  }
+  ctx.drawImage(p.img, dx - 1, dy - 1);
+  if (rim || flash > 0) {
+    const a = ctx.globalAlpha, op = ctx.globalCompositeOperation;
+    if (rim) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = a * 0.22;
+      ctx.drawImage(p.img, dx - 1, dy - 2);
+      ctx.globalCompositeOperation = op;
+    }
+    if (flash > 0) {
+      ctx.globalAlpha = a * flash;
+      ctx.drawImage(p.flash, dx - 1, dy - 1);
+    }
+    ctx.globalAlpha = a;
+  }
+  ctx.imageSmoothingEnabled = smooth;
 }
 
 // Soft drop shadow under a unit — grounds sprites above the terrain
@@ -400,6 +392,7 @@ const HELI_PIXELS = [
 // ========================
 // TERRAIN with water tiles
 // ========================
+let terrainArt = null;   // GFX terrain renderer (chunk cache)
 class Terrain {
   constructor() {
     // โซนแผนที่: แต่ละโซนมีความยาวเป็น world-pixel
@@ -430,207 +423,11 @@ class Terrain {
     return { river: 0 };
   }
 
-  // สีพื้นดิน ณ ตำแหน่ง worldY (ไม่มี grid)
-  _groundColor(worldY) {
-    const blend = this._zoneBlend(worldY);
-    const r = blend.river || 0;
-
-    // noise หลายความถี่ → เนื้อสัมผัสธรรมชาติ ไม่เป็นก้อน
-    const n1 = Math.sin(worldY * 0.031 + 1.7) * 0.5 + 0.5;
-    const n2 = Math.sin(worldY * 0.097 + 0.4) * 0.25 + 0.25;
-    const n  = n1 * 0.7 + n2 * 0.3;
-
-    // สีป่า (jungle) — muted, war-torn: desaturated olive with a cool grey cast
-    const jR =  30 + n * 20 | 0;
-    const jG =  48 + n * 34 | 0;
-    const jB =  28 + n * 16 | 0;
-
-    // สีแม่น้ำ (river) — muddy, muted teal with time shimmer
-    const shimmer = Math.sin(worldY * 0.15 + Date.now() * 0.002) * 0.1 + 0.9;
-    const wR = 30  * shimmer | 0;
-    const wG = (60 + n * 16) * shimmer | 0;
-    const wB = (82 + n * 22) * shimmer | 0;
-
-    // blend linear
-    const fR = jR + (wR - jR) * r | 0;
-    const fG = jG + (wG - jG) * r | 0;
-    const fB = jB + (wB - jB) * r | 0;
-    return `rgb(${fR},${fG},${fB})`;
-  }
-
   draw(scrollY) {
-    // top = ข้างหน้า (worldY สูง = ยิ่งบินไปข้างหน้า)
-    // bottom = ข้างหลัง (worldY ต่ำ = ผ่านมาแล้ว)
-    // formula: worldY = scrollY + H - sy
-    const STRIP = 4;
-    for (let sy = 0; sy <= H; sy += STRIP) {
-      const worldY = scrollY + H - sy;
-      ctx.fillStyle = this._groundColor(worldY);
-      ctx.fillRect(0, sy, W, STRIP + 1);
-    }
-    this._drawWater(scrollY);
-    this._drawFoliage(scrollY);
-    this._drawObjects(scrollY);
-  }
-
-  // Water detail: wave crests, sparkles, and bank edges in river zones
-  _drawWater(scrollY) {
-    // Cheap early-out: sample a few rows; if no river on screen, skip entirely
-    let anyRiver = false;
-    for (let s = 0; s <= H; s += 80) {
-      if ((this._zoneBlend(scrollY + H - s).river || 0) > 0) { anyRiver = true; break; }
-    }
-    if (!anyRiver) return;
-
-    const t = Date.now() * 0.001;
-    const tf = Math.floor(t * 3);
-    const STEP = 8;
-    let prevRiver = 0;
-    for (let sy = 0; sy < H; sy += STEP) {
-      const worldY = scrollY + H - sy;
-      const river = this._zoneBlend(worldY).river || 0;
-      if (river <= 0) { prevRiver = 0; continue; }
-
-      // Bank edge — shoreline where land meets water (reuse previous row's value)
-      if (river > 0.15 && prevRiver <= 0.15) {
-        ctx.fillStyle = 'rgba(120,150,120,0.35)';
-        ctx.fillRect(0, sy - 1, W, 2);
-      }
-      prevRiver = river;
-
-      // Wave crests — faint horizontal ripples that drift
-      const wave = Math.sin(worldY * 0.28 + t * 2.2);
-      if (wave > 0.7) {
-        const alpha = (wave - 0.7) * 0.6 * river;
-        const wx = (Math.sin(worldY * 0.6) * 0.5 + 0.5) * W * 0.4;
-        ctx.fillStyle = `rgba(150,190,200,${alpha.toFixed(2)})`;
-        ctx.fillRect(wx, sy, W * 0.55, 1);
-      }
-
-      // Sparkles — occasional glints on the surface
-      if (river > 0.5 && Math.sin(worldY * 12.9898 + tf * 7.233) > 0.94) {
-        const px = (Math.sin(worldY * 3.1 + tf) * 0.5 + 0.5) * W;
-        ctx.fillStyle = 'rgba(210,235,240,0.7)';
-        ctx.fillRect(px, sy, 2, 2);
-      }
-    }
-  }
-
-  _drawFoliage(scrollY) {
-    // แถบใบไม้/ร่มเงาป่า (overlay streak)
-    for (let sy = -8; sy < H + 8; sy += 6) {
-      const worldY = scrollY + H - sy;
-      const blend  = this._zoneBlend(worldY);
-      if (blend.river > 0.6) continue;
-
-      const hash = Math.sin(worldY * 0.37 + 4.1);
-      if (hash < 0.25) {
-        // N3 — gentle wind sway on the foliage streaks
-        const sway  = Math.sin(worldY * 0.21 + Date.now() * 0.0011) * 3;
-        const x1    = (Math.sin(worldY * 1.13) * 0.5 + 0.5) * W + sway;
-        const w     = 15 + (Math.sin(worldY * 2.71) * 0.5 + 0.5) * 30;
-        const alpha = (0.08 + (Math.sin(worldY * 0.89) * 0.5 + 0.5) * 0.10) * (1 - blend.river);
-        ctx.fillStyle = `rgba(0,30,0,${alpha.toFixed(2)})`;
-        ctx.fillRect(x1, sy, w, 6);
-      }
-    }
-  }
-
-  // วาด rock / plant / reed แบบ object จริงโดยใช้ sprite images
-  _drawObjects(scrollY) {
-    const STEP = 28; // world-unit ระหว่างแต่ละแถว object
-    const startRow = Math.floor(scrollY / STEP) - 1;
-    const endRow   = Math.ceil((scrollY + H) / STEP) + 1;
-
-    for (let row = startRow; row <= endRow; row++) {
-      const anchorW = row * STEP;
-      const sy = H - (anchorW - scrollY); // worldY → screenY
-      if (sy < -48 || sy > H + 48) continue;
-
-      const blend = this._zoneBlend(anchorW);
-      const river = blend.river || 0;
-
-      // 1–3 object ต่อแถว (deterministic)
-      const numObj = 1
-        + (Math.abs(Math.sin(row * 7.31 + 0.5)) > 0.5 ? 1 : 0)
-        + (Math.abs(Math.sin(row * 11.7  + 2.1)) > 0.7 ? 1 : 0);
-
-      for (let i = 0; i < numObj; i++) {
-        const hx    = Math.sin(row * 17.39 + i * 8.13 + 1.27);
-        const htype = Math.sin(row * 5.71  + i * 11.37 + 3.41);
-        const hsz   = Math.sin(row * 23.11 + i * 6.49  + 7.33);
-        const x     = (hx * 0.5 + 0.5) * W;
-        const sz01  = hsz * 0.5 + 0.5; // 0–1
-
-        if (river < 0.4) {
-          /* ===== JUNGLE: rock & plant ===== */
-          if (htype > 0.15) {
-            // 🪨 Rock sprite (Rock1–8)
-            const rockIdx = Math.abs(Math.floor(Math.sin(row * 31.7 + i * 13.1) * 8)) % 8;
-            const rc = rockCanvases[rockIdx];
-            const dw = 14 + sz01 * 18; // 14–32px on screen
-            const dh = dw;
-            if (rc) {
-              ctx.globalAlpha = 0.80 + sz01 * 0.15;
-              ctx.drawImage(rc, 0, 0, 64, 64, x - dw / 2, sy - dh, dw, dh);
-              ctx.globalAlpha = 1;
-            } else {
-              // fallback: rect
-              const br = 55 + sz01 * 35 | 0;
-              ctx.fillStyle = `rgba(${br+10},${br+3},${br-6},0.75)`;
-              ctx.fillRect(x - dw/2, sy - dh, dw, dh);
-            }
-
-          } else if (htype < -0.15) {
-            // 🌿 Plant sprite (PLANT_CELLS)
-            const cellIdx = Math.abs(Math.floor(Math.sin(row * 19.3 + i * 7.9) * 6)) % PLANT_CELLS.length;
-            const [col, prow] = PLANT_CELLS[cellIdx];
-            const srcX = col * PLANT_CW;
-            const srcY = prow * PLANT_CH;
-            const dw = 18 + sz01 * 22; // 18–40px on screen
-            const dh = Math.round(dw * PLANT_CH / PLANT_CW);
-            if (plantsCanvas) {
-              ctx.globalAlpha = 0.78 + sz01 * 0.18;
-              ctx.drawImage(plantsCanvas, srcX, srcY, PLANT_CW, PLANT_CH,
-                            x - dw / 2, sy - dh, dw, dh);
-              ctx.globalAlpha = 1;
-            } else {
-              // fallback: ellipse
-              const g = 65 + sz01 * 40 | 0;
-              ctx.fillStyle = `rgba(10,${g},8,0.70)`;
-              ctx.beginPath();
-              ctx.ellipse(x, sy - dw * 0.4, dw * 0.55, dw * 0.42, 0, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          }
-
-        } else if (river > 0.65) {
-          /* ===== RIVER: reed ริมน้ำ + water lily ===== */
-          if (x < 58 || x > W - 58) {
-            // 🌾 Reed — วาด canvas (ไม่มี sprite เฉพาะ)
-            const rh = 8 + sz01 * 13;
-            const sway = Math.sin(row * 3.1 + i) * 1.5;
-            ctx.fillStyle = `rgba(38,90,22,0.72)`;
-            ctx.fillRect(x + sway - 1, sy - rh,        2, rh);
-            ctx.fillStyle = `rgba(28,68,16,0.56)`;
-            ctx.fillRect(x + sway + 2, sy - rh * 0.7,  1, rh * 0.7);
-            ctx.fillStyle = `rgba(85,58,16,0.78)`;
-            ctx.fillRect(x + sway - 1, sy - rh - 4, 2, 5);
-          } else if (sz01 > 0.58) {
-            // 🪷 Water lily — plant cell 4 (aloe ใช้แทน lily)
-            const dw = 12 + sz01 * 12;
-            const dh = Math.round(dw * PLANT_CH / PLANT_CW);
-            if (plantsCanvas) {
-              const [col, pr] = PLANT_CELLS[4]; // aloe/grass ริมน้ำ
-              ctx.globalAlpha = 0.60;
-              ctx.drawImage(plantsCanvas, col * PLANT_CW, pr * PLANT_CH,
-                            PLANT_CW, PLANT_CH, x - dw/2, sy - dh, dw, dh);
-              ctx.globalAlpha = 1;
-            }
-          }
-        }
-      }
-    }
+    // Pixel-art map shared by every Terrain (zones never change, so chunks stay cached)
+    if (!terrainArt) terrainArt = GFX.createTerrain(wy => this._zoneBlend(wy).river || 0);
+    terrainArt.draw(ctx, scrollY, H);
+    terrainArt.prefetch(scrollY, H);
   }
 
   isRiver(scrollY, screenY) {
@@ -1772,13 +1569,7 @@ function draw() {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(hullAngle);
-      if (tankHullCanvas) {
-        ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2, e.w, e.h);
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.3;
-        ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2 - 1, e.w, e.h);
-        if (flashA > 0) { ctx.globalAlpha = flashA; ctx.drawImage(tankHullCanvas, -e.w / 2, -e.h / 2, e.w, e.h); }
-      }
+      if (tankHullCanvas) blitPixel(tankHullCanvas, 'tank_hull', -e.w / 2, -e.h / 2, e.w, e.h, flashA, true);
       else { ctx.fillStyle = '#3a5c2a'; ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h); }
       ctx.restore();
 
@@ -1788,7 +1579,7 @@ function draw() {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(gunAngle);
-      if (tankGunCanvas) ctx.drawImage(tankGunCanvas, -gw / 2, -gh * 0.65, gw, gh);
+      if (tankGunCanvas) blitPixel(tankGunCanvas, 'tank_gun', -gw / 2, -gh * 0.65, gw, gh, flashA);
       else { ctx.fillStyle = '#2a3d1e'; ctx.fillRect(-gw/2, -gh*0.65, gw, gh); }
       ctx.restore();
 
@@ -1802,11 +1593,7 @@ function draw() {
       ctx.rotate(angle);
       const img = imgs[key];
       if (img && img.complete && img.naturalWidth) {
-        ctx.drawImage(img, -e.w / 2, -e.h / 2, e.w, e.h);
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.3;
-        ctx.drawImage(img, -e.w / 2, -e.h / 2 - 1, e.w, e.h);
-        if (flashA > 0) { ctx.globalAlpha = flashA; ctx.drawImage(img, -e.w / 2, -e.h / 2, e.w, e.h); }
+        blitPixel(img, key, -e.w / 2, -e.h / 2, e.w, e.h, flashA, true);
       }
       else { ctx.fillStyle = '#555'; ctx.fillRect(-e.w / 2, -e.h / 2, e.w, e.h); }
       ctx.restore();
@@ -1821,20 +1608,23 @@ function draw() {
       const fy = ecy + (mdy / md) * (e.h * 0.45);
       ctx.save();
       ctx.globalAlpha = Math.min(1, e.muzzle * 11);
-      ctx.fillStyle = '#ffd24a';
-      ctx.beginPath(); ctx.arc(fx, fy, 4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(fx, fy, 2, 0, Math.PI * 2); ctx.fill();
+      const mx = Math.round(fx), my = Math.round(fy);
+      ctx.fillStyle = '#ffb028';
+      ctx.fillRect(mx - 4, my - 1, 9, 3); ctx.fillRect(mx - 1, my - 4, 3, 9);
+      ctx.fillStyle = '#fff6c0';
+      ctx.fillRect(mx - 1, my - 1, 3, 3);
       ctx.restore();
     }
 
-    // HP bar for multi-hp enemies
-    if (e.maxHp > 1) {
-      ctx.fillStyle = '#111';
-      ctx.fillRect(e.x, e.y - 6, e.w, 4);
-      const hpColor = e.hp > e.maxHp * 0.5 ? '#2f2' : e.hp > e.maxHp * 0.25 ? '#fa0' : '#f22';
-      ctx.fillStyle = hpColor;
-      ctx.fillRect(e.x, e.y - 6, e.w * (e.hp / e.maxHp), 4);
+    // HP bar for multi-hp enemies — slim pixel bar, only once damaged
+    if (e.maxHp > 1 && e.hp < e.maxHp) {
+      const bw = Math.round(e.w * 0.7), bx = Math.round(e.x + (e.w - bw) / 2), by = Math.round(e.y - 5);
+      ctx.fillStyle = '#0c140e';
+      ctx.fillRect(bx - 1, by - 1, bw + 2, 4);
+      ctx.fillStyle = '#3a1410';
+      ctx.fillRect(bx, by, bw, 2);
+      ctx.fillStyle = e.hp > e.maxHp * 0.5 ? '#8ce05a' : e.hp > e.maxHp * 0.25 ? '#f0b030' : '#e84030';
+      ctx.fillRect(bx, by, Math.ceil(bw * Math.max(0, e.hp) / e.maxHp), 2);
     }
     if (scaled) ctx.restore();   // N5 — end entrance scale
   });
@@ -1843,23 +1633,29 @@ function draw() {
   if (boss) drawBoss();
 
   // Enemy bullets
+  const bulletFlicker = Date.now() >> 6;
   bullets.forEach(b => {
     if (b.owner === 'player') {
-      // G3 — bright warm tracer with glow + white-hot core (readable)
-      ctx.fillStyle = 'rgba(255,240,120,0.28)';
-      ctx.fillRect(b.x - 2, b.y - 3, b.w + 4, b.h + 6);
-      ctx.fillStyle = '#ffee44';
-      ctx.fillRect(b.x, b.y, b.w, b.h);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(b.x + b.w / 2 - 0.5, b.y, 1, b.h);
+      // G3 — warm pixel tracer: dark outline, gold body, white-hot tip
+      const bx = Math.round(b.x), by = Math.round(b.y);
+      ctx.fillStyle = '#5a2c06';
+      ctx.fillRect(bx - 1, by - 1, b.w + 2, b.h + 2);
+      ctx.fillStyle = '#ffc430';
+      ctx.fillRect(bx, by, b.w, b.h);
+      ctx.fillStyle = '#fff8d0';
+      ctx.fillRect(bx, by, b.w, Math.ceil(b.h / 2));
     } else {
-      // G3 — enemy round shifted to red/pink so it never reads as a player shot
-      ctx.fillStyle = 'rgba(255,0,60,0.32)';
-      ctx.fillRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6);
+      // G3 — enemy round: chunky red pixel orb with a flickering core (never reads as a player shot)
+      const r = Math.max(2, Math.round(Math.max(b.w, b.h) / 2));
+      const cx = Math.round(b.x + b.w / 2), cy = Math.round(b.y + b.h / 2);
+      ctx.fillStyle = '#300010';
+      ctx.fillRect(cx - r - 1, cy - r, 2 * r + 2, 2 * r);
+      ctx.fillRect(cx - r, cy - r - 1, 2 * r, 2 * r + 2);
       ctx.fillStyle = '#ff2a4a';
-      ctx.fillRect(b.x, b.y, b.w, b.h);
-      ctx.fillStyle = '#ff9ab0';
-      ctx.fillRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+      ctx.fillRect(cx - r, cy - r + 1, 2 * r, 2 * r - 2);
+      ctx.fillRect(cx - r + 1, cy - r, 2 * r - 2, 2 * r);
+      ctx.fillStyle = (bulletFlicker & 1) ? '#ffffff' : '#ffb0c4';
+      ctx.fillRect(cx - r + 1, cy - r + 1, Math.max(1, r - 1), Math.max(1, r - 1));
     }
   });
 
@@ -1882,20 +1678,18 @@ function draw() {
     const colors = { P: '#0ff', H: '#f44', B: '#f80' };
     const labels = { P: 'P', H: '♥', B: 'B' };
     const col = colors[it.type];
-    ctx.save();
-    ctx.shadowColor = col;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = '#0a0a14';
-    ctx.fillRect(it.x, y, it.w, it.h);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(it.x, y, it.w, it.h);
-    ctx.shadowBlur = 0;
+    const ix = Math.round(it.x), iy = Math.round(y);
+    const blink = (Date.now() >> 7) & 1;
+    ctx.fillStyle = '#0c140e';
+    ctx.fillRect(ix - 2, iy - 2, it.w + 4, it.h + 4);
+    ctx.fillStyle = blink ? col : '#ffffff';
+    ctx.fillRect(ix - 1, iy - 1, it.w + 2, it.h + 2);
+    ctx.fillStyle = '#121624';
+    ctx.fillRect(ix, iy, it.w, it.h);
     ctx.fillStyle = col;
-    ctx.font = 'bold 7px monospace';
+    ctx.font = '8px monospace';
     const lbl = labels[it.type];
-    ctx.fillText(lbl, it.x + it.w/2 - ctx.measureText(lbl).width/2, y + it.h - 2);
-    ctx.restore();
+    ctx.fillText(lbl, ix + Math.round((it.w - ctx.measureText(lbl).width) / 2), iy + it.h - 2);
   });
 
   // Combo display (mid-screen)
@@ -1923,19 +1717,15 @@ function draw() {
   if (heliAlpha > 0) {
     const hcx = player.x + player.w / 2;
     const hcy = player.y + player.h / 2 + player.recoil;  // J5 — kickback
-    drawShadow(hcx, hcy, HELI_DST_W, HELI_DST_H, 0.28);
     // J5 — muzzle flash at the nose
     if (player.muzzle > 0) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, player.muzzle * 14);
-      ctx.fillStyle = '#ffe680';
-      ctx.beginPath();
-      ctx.ellipse(hcx, player.y - 4, 3.5, 7, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.ellipse(hcx, player.y - 3, 1.8, 4, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const mx = Math.round(hcx), my = Math.round(player.y);
+      ctx.fillStyle = '#ffb028';
+      ctx.fillRect(mx - 3, my - 8, 7, 6); ctx.fillRect(mx - 1, my - 12, 3, 12);
+      ctx.fillStyle = '#fff6c0';
+      ctx.fillRect(mx - 1, my - 9, 3, 6);
       ctx.restore();
     }
     drawPlayerHeli(hcx, hcy, 1);
@@ -1975,7 +1765,7 @@ function draw() {
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#fff';
     ctx.font = '20px monospace';
-    ctx.fillText('PAUSED', W / 2 - 40, H / 2);
+    fillCentered('PAUSED', H / 2);
     ctx.fillStyle = '#aaa';
     ctx.font = '10px monospace';
     const resumeMsg = isTouch ? 'Tap to continue' : 'Press P to continue';
@@ -2137,12 +1927,7 @@ function drawBoss() {
     ctx.save();
     ctx.translate(g.x, g.y);
     ctx.rotate(a - Math.PI / 2);
-    ctx.drawImage(img, -tSize / 2, -tSize * 0.3, tSize, tSize);
-    if (flashA > 0) {
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = flashA;
-      ctx.drawImage(img, -tSize / 2, -tSize * 0.3, tSize, tSize);
-    }
+    blitPixel(img, tKey, -tSize / 2, -tSize * 0.3, tSize, tSize, flashA);
     ctx.restore();
   });
   if (b.flashTimer > 0) b.flashTimer = Math.max(0, b.flashTimer - 0.016);
@@ -2188,103 +1973,114 @@ function drawWarningBanner() {
 }
 
 function drawHUD() {
-  // G4 — panel with arcade accent bar
-  ctx.fillStyle = 'rgba(6,10,8,0.82)';
+  // G4 — bevelled pixel panel with arcade accent
+  ctx.fillStyle = '#0e1610';
   ctx.fillRect(0, H - 38, W, 38);
-  ctx.fillStyle = '#3a5a2a';
+  ctx.fillStyle = '#26381e';
   ctx.fillRect(0, H - 39, W, 1);
-  ctx.fillStyle = '#8fd86a';
+  ctx.fillStyle = '#7fb04e';
   ctx.fillRect(0, H - 40, W, 1);
+  ctx.fillStyle = '#1a2616';
+  ctx.fillRect(0, H - 19, W, 1);
+  ctx.font = '8px monospace';
 
   // HP hearts
-  ctx.font = '8px monospace';
-  ctx.fillStyle = '#f44';
+  ctx.fillStyle = '#e84a3a';
   ctx.fillText('HP', 5, H - 24);
   for (let i = 0; i < player.maxHp; i++) {
-    ctx.fillStyle = i < player.hp ? '#f44' : '#332';
-    ctx.fillRect(22 + i * 11, H - 31, 9, 9);
+    ctx.fillStyle = i < player.hp ? '#ff5a48' : '#3a2420';
+    ctx.fillText('♥', 20 + i * 7, H - 24);
   }
 
-  // Ammo bar
-  ctx.fillStyle = '#ff8';
-  ctx.fillText('AMMO', 5, H - 12);
-  ctx.fillStyle = '#333';
-  ctx.fillRect(36, H - 18, 70, 6);
-  ctx.fillStyle = player.ammo > 20 ? '#ff8' : '#f44';
-  ctx.fillRect(36, H - 18, 70 * (player.ammo / player.maxAmmo), 6);
+  // Ammo — segmented bar
+  ctx.fillStyle = '#f0d060';
+  ctx.fillText('AMMO', 5, H - 5);
+  const SEGS = 18, filled = Math.ceil(SEGS * player.ammo / player.maxAmmo);
+  const low = player.ammo <= 20;
+  for (let i = 0; i < SEGS; i++) {
+    ctx.fillStyle = i < filled ? (low ? '#e84a3a' : (i % 2 ? '#f0d060' : '#ffe890')) : '#2a2a1c';
+    ctx.fillRect(32 + i * 4, H - 12, 3, 7);
+  }
 
-  // Bombs
-  ctx.fillStyle = player.bombs > 0 ? '#f80' : '#444';
+  // Bombs — little pixel bomb icons
+  ctx.fillStyle = '#f09030';
+  ctx.fillText('BOMB', 112, H - 24);
   for (let i = 0; i < player.maxBombs; i++) {
-    ctx.fillStyle = i < player.bombs ? '#f80' : '#333';
-    ctx.fillRect(112 + i * 14, H - 19, 10, 10);
-    // Bomb icon (circle)
-    ctx.strokeStyle = i < player.bombs ? '#fa0' : '#444';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(117 + i * 14, H - 14, 5, 0, Math.PI*2); ctx.stroke();
+    const bx = 108 + i * 11, by = H - 14, on = i < player.bombs;
+    ctx.fillStyle = '#0c140e';
+    ctx.fillRect(bx, by, 8, 8);
+    ctx.fillStyle = on ? '#e07020' : '#2e2a24';
+    ctx.fillRect(bx + 1, by + 1, 6, 6);
+    if (on) {
+      ctx.fillStyle = '#ffd080'; ctx.fillRect(bx + 2, by + 2, 2, 2);
+      ctx.fillStyle = '#fff'; ctx.fillRect(bx + 6, by - 2, 1, 2);
+    }
   }
-  ctx.fillStyle = '#f80';
-  ctx.font = '7px monospace';
-  ctx.fillText('BOMB', 112, H - 22);
 
-  // Score
-  ctx.fillStyle = '#fff';
-  ctx.font = '9px monospace';
-  ctx.fillText(`${score}`, W - 50, H - 12);
-
-  // Mission label
-  const mnames = ['', 'LZ JUNGLE', 'MEKONG DELTA', 'HO CHI MINH'];
-  ctx.fillStyle = '#8f8';
-  ctx.font = '7px monospace';
-  ctx.fillText(mnames[mission] || `MISSION ${mission}`, W - 75, H - 22);
-
-  // Power level indicator
-  ctx.fillStyle = '#0cc';
-  ctx.font = '7px monospace';
-  ctx.fillText('PWR', 146, H - 22);
+  // Power level
+  ctx.fillStyle = '#40d0d0';
+  ctx.fillText('PWR', 146, H - 24);
   for (let i = 0; i < 5; i++) {
-    ctx.fillStyle = i < player.powerLevel ? '#0ff' : '#1a2a2a';
-    ctx.fillRect(168 + i * 9, H - 29, 7, 6);
-    ctx.strokeStyle = i < player.powerLevel ? '#0cc' : '#223';
-    ctx.lineWidth = 0.5;
-    ctx.strokeRect(168 + i * 9, H - 29, 7, 6);
+    const on = i < player.powerLevel;
+    ctx.fillStyle = '#0c140e';
+    ctx.fillRect(166 + i * 8, H - 32, 7, 9);
+    ctx.fillStyle = on ? (i % 2 ? '#40e0e0' : '#80f4f4') : '#16282a';
+    ctx.fillRect(167 + i * 8, H - 31, 5, 7);
   }
+
+  // Score + mission (right-aligned)
+  ctx.fillStyle = '#8a9a7a';
+  ctx.fillText('SCORE', 146, H - 5);
+  ctx.fillStyle = '#ffffff';
+  const scoreTxt = String(score).padStart(7, '0');
+  ctx.fillText(scoreTxt, W - 5 - ctx.measureText(scoreTxt).width, H - 5);
+  const mnames = ['', 'LZ JUNGLE', 'MEKONG DELTA', 'HO CHI MINH'];
+  ctx.fillStyle = '#8fd86a';
+  const mTxt = mnames[mission] || `MISSION ${mission}`;
+  ctx.fillText(mTxt, W - 5 - ctx.measureText(mTxt).width, H - 24);
 
   // Ammo reload warning
-  if (player.ammo === 0) {
-    const blink = Math.sin(Date.now() / 120) > 0;
-    if (blink) {
-      ctx.fillStyle = '#f44';
-      ctx.font = '9px monospace';
-      ctx.fillText('RELOADING...', W / 2 - 38, H - 44);
-    }
+  if (player.ammo === 0 && Math.sin(Date.now() / 120) > 0) {
+    ctx.fillStyle = '#ff5a48';
+    ctx.font = '9px monospace';
+    fillCentered('RELOADING...', H - 46);
   }
 }
 
 // ========================
 // SCREENS
 // ========================
+// Two-tone 16-bit logo: dark outline, gold body, pale highlight on the upper half
+function drawLogo(text, y) {
+  ctx.font = '36px monospace';
+  const x = Math.round(W / 2 - ctx.measureText(text).width / 2);
+  ctx.fillStyle = '#3a1e08';
+  for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [2, 2]]) ctx.fillText(text, x + ox, y + oy);
+  ctx.fillStyle = '#e09a30';
+  ctx.fillText(text, x, y);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, y - 28, W, 12); ctx.clip();
+  ctx.fillStyle = '#fff0a8';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
 function drawTitle() {
-  // Dark jungle bg
-  ctx.fillStyle = '#0a150a';
+  // Live map scrolling behind the menu, darkened so the text reads
+  terrain.draw(performance.now() * 0.03 + 2300);
+  ctx.fillStyle = 'rgba(6,12,8,0.62)';
   ctx.fillRect(0, 0, W, H);
-  // Scanlines
-  for (let y = 0; y < H; y += 3) {
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.fillRect(0, y, W, 1);
-  }
+  drawVignette();
   // Animated boat on title
   const tf = boatFrame();
   ctx.globalAlpha = 0.5;
   drawSprite(`boat3_${tf}`, W / 2 - 30, 200, 60, 60);
   ctx.globalAlpha = 1;
 
-  ctx.fillStyle = '#c8a050';
-  ctx.font = 'bold 24px monospace';
-  ctx.fillText('STEEL RAIN', W / 2 - 68, 110);
-  ctx.fillStyle = '#8a7030';
-  ctx.font = '12px monospace';
-  ctx.fillText("VIETNAM '69", W / 2 - 38, 130);
+  drawLogo('STEEL RAIN', 112);
+  ctx.fillStyle = '#e8b048';
+  ctx.font = '18px monospace';
+  fillCentered("VIETNAM '69", 134);
 
   // M5 — tagline
   ctx.fillStyle = '#6a8a4a';
@@ -2330,10 +2126,10 @@ function drawTitle() {
   ctx.fillStyle = '#888';
   ctx.font = '8px monospace';
   if (isTouch) {
-    ctx.fillText('DRAG: Move + auto-fire   BOMB / RELOAD: buttons', W / 2 - 104, 348);
+    fillCentered('DRAG: Move + auto-fire   BOMB / RELOAD: buttons', 348);
   } else {
-    ctx.fillText('WASD: Move   Z/SPACE: Gun   X: BOMB   R: Reload', W / 2 - 96, 348);
-    ctx.fillText('P: Pause', W / 2 - 24, 362);
+    fillCentered('WASD: Move   Z/SPACE: Gun   X: BOMB   R: Reload', 348);
+    fillCentered('P: Pause', 362);
   }
 
   if (bestScore > 0) {
@@ -2345,7 +2141,7 @@ function drawTitle() {
 
   ctx.fillStyle = '#4a6';
   ctx.font = '7px monospace';
-  ctx.fillText('3 MISSIONS  |  DESTROY ALL ENEMIES', W / 2 - 75, 392);
+  fillCentered('3 MISSIONS  |  DESTROY ALL ENEMIES', 392);
 }
 
 function drawNameEntry() {
@@ -2360,11 +2156,11 @@ function drawNameEntry() {
   if (nameEntryFromClear) {
     ctx.fillStyle = '#8f8';
     ctx.font = 'bold 16px monospace';
-    ctx.fillText('MISSION COMPLETE!', W / 2 - 70, 48);
+    fillCentered('MISSION COMPLETE!', 48);
   } else {
     ctx.fillStyle = '#f44';
     ctx.font = 'bold 16px monospace';
-    ctx.fillText('MISSION FAILED', W / 2 - 62, 48);
+    fillCentered('MISSION FAILED', 48);
   }
 
   // Score
@@ -2387,7 +2183,7 @@ function drawNameEntry() {
     // Name entry prompt
     ctx.fillStyle = '#fff';
     ctx.font = '10px monospace';
-    ctx.fillText('ENTER YOUR NAME (3 CHARS)', W / 2 - 74, 108);
+    fillCentered('ENTER YOUR NAME (3 CHARS)', 108);
     ctx.fillStyle = '#888';
     ctx.font = '8px monospace';
     const howTo = isTouch ? 'Tap top / bottom of a letter to change it' : 'Arrow keys or A-Z / 0-9  |  ENTER to confirm';
@@ -2416,8 +2212,8 @@ function drawNameEntry() {
       if (isTouch) {
         ctx.fillStyle = active ? '#ff8' : '#666';
         ctx.font = '8px monospace';
-        ctx.fillText('▲', bx + boxW / 2 - 4, boxY + 9);
-        ctx.fillText('▼', bx + boxW / 2 - 4, boxY + boxH - 2);
+        ctx.fillText('▲', bx + boxW / 2 - 2, boxY + 9);
+        ctx.fillText('▼', bx + boxW / 2 - 2, boxY + boxH - 2);
       }
       // Cursor blink under active
       if (active && Math.floor(Date.now() / 400) % 2) {
@@ -2441,14 +2237,14 @@ function drawNameEntry() {
     // Arrow hint
     ctx.fillStyle = '#666';
     ctx.font = '8px monospace';
-    ctx.fillText('UP/DOWN: Change char   LEFT/RIGHT: Select', W / 2 - 90, 198);
+    fillCentered('UP/DOWN: Change char   LEFT/RIGHT: Select', 198);
     }
 
     // Enter hint blink
     if (!isTouch && Math.floor(Date.now() / 600) % 2) {
       ctx.fillStyle = '#aaa';
       ctx.font = '9px monospace';
-      ctx.fillText('ENTER = Confirm', W / 2 - 40, 218);
+      fillCentered('ENTER = Confirm', 218);
     }
   }
 
@@ -2458,16 +2254,16 @@ function drawNameEntry() {
 
   ctx.fillStyle = '#f80';
   ctx.font = 'bold 9px monospace';
-  ctx.fillText('-- GLOBAL TOP 10 --', W / 2 - 52, boardY);
+  fillCentered('-- GLOBAL TOP 10 --', boardY);
 
   if (boardLoading) {
     ctx.fillStyle = '#888';
     ctx.font = '9px monospace';
-    ctx.fillText('Loading...', W / 2 - 24, boardY + 20);
+    fillCentered('Loading...', boardY + 20);
   } else if (board.length === 0) {
     ctx.fillStyle = '#555';
     ctx.font = '9px monospace';
-    ctx.fillText('No scores yet', W / 2 - 30, boardY + 20);
+    fillCentered('No scores yet', boardY + 20);
   } else {
     board.forEach((entry, idx) => {
       const myName = playerName.join('');
@@ -2479,7 +2275,7 @@ function drawNameEntry() {
       const missionStr = `M${entry.mission || 1}`;
       const scoreStr = String(entry.score).padStart(7, ' ');
       const line = `${rank} ${nameStr}  ${scoreStr}  ${missionStr}`;
-      ctx.fillText(line, W / 2 - 68, boardY + 14 + idx * 13);
+      fillCentered(line, boardY + 14 + idx * 13);
     });
   }
 
@@ -2487,7 +2283,7 @@ function drawNameEntry() {
   if (nameConfirmed) {
     ctx.fillStyle = '#555';
     ctx.font = '8px monospace';
-    ctx.fillText('Share via buttons below   |   ENTER = Play again', W / 2 - 100, H - 12);
+    fillCentered('Share via buttons below   |   ENTER = Play again', H - 12);
   }
 }
 
