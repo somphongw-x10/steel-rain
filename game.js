@@ -171,7 +171,7 @@ for (let f = 1; f <= 3; f++) {
   loadImg(`cannon2_${f}`, `assets/PNG/Cannon2_color1/Cannon2_color1_${f}.png`);
 }
 // Boss turrets
-loadImg('turret_m', 'assets/PNG/Cannon4_color1/Cannon4_color1_1.png');
+loadImg('turret_m', 'assets/PNG/Cannon4_color3/Cannon4_color3_1.png');
 loadImg('turret_f', 'assets/PNG/Cannon1_color2/Cannon1_color2_1.png');
 // Fire / Explosion (3 frames each)
 for (let t = 1; t <= 4; t++) {
@@ -1131,7 +1131,7 @@ function updateFortress(b, dt, cx, cy) {
       b.bigTimer = 3.3;
       const px = player.x + player.w / 2, py = player.y + player.h / 2;
       const spots = [{ x: px, y: py }];
-      for (const s of [-1, 1]) spots.push({ x: Math.max(20, Math.min(W - 20, px + s * 70)), y: Math.max(60, py - 40 + Math.random() * 80) });
+      for (const s of [-1, 1]) spots.push({ x: Math.max(20, Math.min(W - 20, px + s * 70)), y: Math.max(60, Math.min(H - 40, py - 40 + Math.random() * 80)) });
       b.tele = { kind: 'shells', t: 1.0, dur: 1.0, spots };
       playSfx('ui_move', 0.1);
     }
@@ -2128,7 +2128,7 @@ function drawBoss() {
   // Turrets track their target so the player can read where fire comes from
   const turrets = bossTurrets(b);
   const tKey = b.kind === 'monitor' ? 'turret_m' : 'turret_f';
-  const tSize = b.kind === 'monitor' ? 44 : 64;
+  const tSize = b.kind === 'monitor' ? 48 : 64;
   const img = imgs[tKey];
   if (ready(tKey)) turrets.forEach((g, i) => {
     let a = aimAt(g.x, g.y);
