@@ -152,6 +152,9 @@ for (let f = 1; f <= 4; f++) {
   loadImg(`boat2_${f}`, `assets/PNG/Boat2_water_animation_color/Boat2_water_frame${f}.png`);
   loadImg(`boat3_${f}`, `assets/PNG/Boat3_water_animation_color1/Boat3_water_frame${f}.png`);
   loadImg(`boat4_${f}`, `assets/PNG/Boat4_water_animation_color1/Boat4_water_frame${f}.png`);
+  // Boss hulls — Monitor (long green hull), Fortress (grey armored hull)
+  loadImg(`bossm_${f}`, `assets/PNG/Boat2_water_animation_color2/Boat2_water_frame${f}.png`);
+  loadImg(`bossf_${f}`, `assets/PNG/Boat3_water_animation_color3/Boat3_water_frame${f}.png`);
 }
 // Static boat sprites
 for (let f = 1; f <= 4; f++) {
@@ -167,6 +170,9 @@ for (let f = 1; f <= 4; f++) {
 for (let f = 1; f <= 3; f++) {
   loadImg(`cannon2_${f}`, `assets/PNG/Cannon2_color1/Cannon2_color1_${f}.png`);
 }
+// Boss turrets
+loadImg('turret_m', 'assets/PNG/Cannon4_color1/Cannon4_color1_1.png');
+loadImg('turret_f', 'assets/PNG/Cannon1_color2/Cannon1_color2_1.png');
 // Fire / Explosion (3 frames each)
 for (let t = 1; t <= 4; t++) {
   const maxF = 3;
@@ -914,20 +920,269 @@ function spawnWave(dt) {
   }
 }
 
+// Item 6 — one boss per mission, each with its own hull, movement and 2 phases.
+// Phase 2 starts at 50% HP; every big attack is telegraphed via boss.tele.
+const BOSS_DEFS = {
+  1: { kind: 'gunboat',  sprite: 'boat4', w: 80,  h: 80,  hp: 50, homeY: 70 },
+  2: { kind: 'monitor',  sprite: 'bossm', w: 104, h: 104, hp: 65, homeY: 56 },
+  3: { kind: 'fortress', sprite: 'bossf', w: 124, h: 124, hp: 85, homeY: 36 },
+};
+
 function spawnBoss() {
   bossSpawned = true;
   playSfx('warning');      // A5 — boss approach alert
   duckMusic(0.4, 800);     // A2
   warningTimer = 2.2;      // M3 — WARNING banner
+  const def = BOSS_DEFS[mission] || BOSS_DEFS[1];
+  const hp = Math.ceil(def.hp * diff.enemyHp);
   boss = {
-    type: 'boss_boat',
-    x: W / 2 - 40, y: -100,
-    w: 80, h: 80,
-    hp: Math.ceil((40 + mission * 10) * diff.enemyHp), maxHp: Math.ceil((40 + mission * 10) * diff.enemyHp),
-    speed: 45, phase: 0, dir: 1,
-    shootTimer: 0, phaseTimer: 0,
+    type: 'boss_boat', kind: def.kind, sprite: def.sprite,
+    x: W / 2 - def.w / 2, y: -def.h - 20,
+    w: def.w, h: def.h, homeY: def.homeY,
+    hp, maxHp: hp,
+    phase: 0, dir: 1,
+    shootTimer: 1.2, phaseTimer: 0,
+    altTimer: 0.5, bigTimer: 2.5, spin: 0, sweep: 0, turn: 0,
+    tele: null, charge: null,
     points: 5000 + mission * 1000,
   };
+}
+
+function bossShot(x, y, a, sp, sz = 5) {
+  sp *= diff.bulletSpeed;
+  bullets.push({ x: x - sz / 2, y: y - sz / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, owner: 'enemy', w: sz, h: sz });
+}
+
+function aimAt(x, y) {
+  return Math.atan2(player.y + player.h / 2 - y, player.x + player.w / 2 - x);
+}
+
+// Visible gun mounts — bullets come out of what the player sees aiming
+function bossTurrets(b) {
+  if (b.kind === 'monitor') {
+    return [{ x: b.x + b.w * 0.5, y: b.y + b.h * 0.26 }, { x: b.x + b.w * 0.5, y: b.y + b.h * 0.72 }];
+  }
+  if (b.kind === 'fortress') {
+    return [{ x: b.x + b.w * 0.2, y: b.y + b.h * 0.62 }, { x: b.x + b.w * 0.5, y: b.y + b.h * 0.8 }, { x: b.x + b.w * 0.8, y: b.y + b.h * 0.62 }];
+  }
+  return [];
+}
+
+// Sprites are padded with water — hit the hull, not the box
+function bossHitbox(b) {
+  const ix = b.w * (b.kind === 'monitor' ? 0.3 : 0.16), iy = b.h * 0.12;
+  return { x: b.x + ix, y: b.y + iy, w: b.w - ix * 2, h: b.h - iy * 2 };
+}
+
+function updateBoss(dt) {
+  const b = boss;
+  b.phaseTimer += dt;
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+
+  if (b.hp <= 0) { killBoss(); return; }
+
+  // Entrance — sail in, no fire
+  if (!b.entered) {
+    b.y += 60 * dt;
+    if (b.y >= b.homeY) { b.y = b.homeY; b.entered = true; }
+    return;
+  }
+
+  // Phase 2 — readable reset: clear fire, blast, announce
+  if (b.phase === 0 && b.hp < b.maxHp * 0.5) {
+    b.phase = 1;
+    b.tele = null; b.bigTimer = 1.4; b.shootTimer = 1.0; b.altTimer = 0.6;
+    for (let i = bullets.length - 1; i >= 0; i--) if (bullets[i].owner === 'enemy') bullets.splice(i, 1);
+    spawnExplosion(cx, cy, b.w * 1.3);
+    spawnParticle(cx, cy, '#ffaa00', 14);
+    playSfx('blast1', 0.2); playSfx('warning');
+    addTrauma(0.6);
+    hitStop = Math.max(hitStop, 0.08);
+    spawnPopup(cx, b.y + b.h + 8, 'PHASE 2', '#ff8800');
+  }
+
+  if (b.kind === 'gunboat') updateGunboat(b, dt, cx, cy);
+  else if (b.kind === 'monitor') updateMonitor(b, dt, cx, cy);
+  else updateFortress(b, dt, cx, cy);
+
+  // Big telegraphed attack resolves when its timer runs out
+  if (b.tele) {
+    b.tele.t -= dt;
+    if (b.tele.t <= 0) { const t = b.tele; b.tele = null; fireBossBig(b, t); }
+  }
+
+  // Ramming hull hurts
+  if (player.invincible <= 0 && overlap(playerHitbox(), bossHitbox(b))) hurtPlayer();
+}
+
+// ARMORED GUNBOAT — fast patrol. P1: aimed 3-burst. P2: twin spiral + torpedo lanes.
+function updateGunboat(b, dt, cx, cy) {
+  if (!b.tele) {
+    b.x += (b.phase ? 100 : 55) * b.dir * dt;
+    if (b.x > W - b.w - 10) { b.x = W - b.w - 10; b.dir = -1; }
+    if (b.x < 10) { b.x = 10; b.dir = 1; }
+  }
+  const bx = cx, by = b.y + b.h * 0.85;
+  b.shootTimer -= dt;
+  if (b.phase === 0) {
+    if (b.shootTimer <= 0) {
+      b.shootTimer = 0.95;
+      playSfx('boss_shot', 0.1);
+      const a = aimAt(bx, by);
+      for (const o of [-0.22, 0, 0.22]) bossShot(bx, by, a + o, 185);
+    }
+  } else {
+    b.altTimer -= dt;
+    if (b.altTimer <= 0 && !b.tele) {
+      b.altTimer = 0.12;
+      b.spin += 0.42;
+      bossShot(cx, cy, b.spin, 120, 4);
+      bossShot(cx, cy, b.spin + Math.PI, 120, 4);
+    }
+    b.bigTimer -= dt;
+    if (b.bigTimer <= 0 && !b.tele) {
+      b.bigTimer = 3.4;
+      const a = aimAt(bx, by);
+      b.tele = { kind: 'lanes', t: 0.8, dur: 0.8, x: bx, y: by, angles: [a - 0.34, a, a + 0.34] };
+    }
+  }
+}
+
+// MONITOR WARSHIP — slow weave, 2 turrets. P1: turret pairs + slow rings. P2: ram charges.
+function updateMonitor(b, dt, cx, cy) {
+  const t = b.phaseTimer;
+  const turrets = bossTurrets(b);
+  if (b.charge) {
+    const c = b.charge;
+    if (c.stage === 'down') {
+      b.y += 430 * dt;
+      c.drop -= dt;
+      if (c.drop <= 0) {   // wake of side shots behind the ram
+        c.drop = 0.09;
+        bossShot(cx, cy, 0, 90, 4); bossShot(cx, cy, Math.PI, 90, 4);
+      }
+      if (b.y > H - b.h * 0.7) { c.stage = 'up'; addTrauma(0.35); }
+    } else {
+      b.y -= 170 * dt;
+      if (b.y <= b.homeY) { b.y = b.homeY; b.charge = null; b.bigTimer = 2.6; }
+    }
+    return;
+  }
+  if (b.tele && b.tele.kind === 'ram') {
+    // Line up with the player, lock for the last 0.35 s so the lane is honest
+    if (b.tele.t > 0.35) b.x += ((player.x + player.w / 2 - b.w / 2) - b.x) * Math.min(1, dt * 5);
+    b.x = Math.max(4, Math.min(W - b.w - 4, b.x));
+    b.tele.x = b.x + b.w / 2;
+    return;
+  }
+  const tx = W / 2 - b.w / 2 + Math.sin(t * 0.55) * (W / 2 - b.w / 2 - 6);
+  b.x += (tx - b.x) * Math.min(1, dt * 2);
+  b.y += (b.homeY + Math.sin(t * 1.4) * 8 - b.y) * Math.min(1, dt * 3);
+
+  b.altTimer -= dt;
+  if (b.altTimer <= 0) {
+    b.altTimer = b.phase ? 0.7 : 0.85;
+    const g = turrets[b.turn++ % 2];
+    const a = aimAt(g.x, g.y);
+    playSfx('boss_shot', 0.08);
+    if (b.phase === 0) { bossShot(g.x, g.y, a - 0.06, 175); bossShot(g.x, g.y, a + 0.06, 175); }
+    else for (const o of [-0.3, 0, 0.3]) bossShot(g.x, g.y, a + o, 175);
+  }
+  if (b.phase === 0) {
+    b.shootTimer -= dt;
+    if (b.shootTimer <= 0) {
+      b.shootTimer = 2.3;
+      b.spin += 0.2;
+      for (let k = 0; k < 14; k++) bossShot(cx, cy, b.spin + k * Math.PI * 2 / 14, 95, 6);
+    }
+  } else {
+    b.bigTimer -= dt;
+    if (b.bigTimer <= 0) b.tele = { kind: 'ram', t: 1.0, dur: 1.0, x: cx };
+  }
+}
+
+// RIVER FORTRESS — near-stationary, 3 turrets. P1: sweeping curtain + aimed sides.
+// P2: artillery reticles that burst into rings + 3-arm spiral.
+function updateFortress(b, dt, cx, cy) {
+  const t = b.phaseTimer;
+  b.x = W / 2 - b.w / 2 + Math.sin(t * 0.35) * 28;
+  const [gl, gc, gr] = bossTurrets(b);
+
+  b.shootTimer -= dt;
+  if (b.shootTimer <= 0) {
+    b.shootTimer = b.phase ? 1.7 : 1.3;
+    playSfx('boss_shot', 0.1);
+    const g = (b.turn++ % 2) ? gl : gr;
+    bossShot(g.x, g.y, aimAt(g.x, g.y), 200, 6);
+  }
+  b.altTimer -= dt;
+  if (b.phase === 0) {
+    b.sweep = Math.PI / 2 + Math.sin(t * 1.5) * 1.0;
+    gc.aim = b.sweep;
+    if (b.altTimer <= 0) { b.altTimer = 0.085; bossShot(gc.x, gc.y, b.sweep, 145, 4); }
+  } else {
+    if (b.altTimer <= 0) {
+      b.altTimer = 0.16;
+      b.spin += 0.27;
+      for (let k = 0; k < 3; k++) bossShot(gc.x, gc.y, b.spin + k * Math.PI * 2 / 3, 115, 4);
+    }
+    b.bigTimer -= dt;
+    if (b.bigTimer <= 0 && !b.tele) {
+      b.bigTimer = 3.3;
+      const px = player.x + player.w / 2, py = player.y + player.h / 2;
+      const spots = [{ x: px, y: py }];
+      for (const s of [-1, 1]) spots.push({ x: Math.max(20, Math.min(W - 20, px + s * 70)), y: Math.max(60, py - 40 + Math.random() * 80) });
+      b.tele = { kind: 'shells', t: 1.0, dur: 1.0, spots };
+      playSfx('ui_move', 0.1);
+    }
+  }
+}
+
+function fireBossBig(b, t) {
+  playSfx('boss_shot', 0.12);
+  addTrauma(0.25);
+  if (t.kind === 'lanes') {
+    // Torpedoes — big, fast, down the drawn lanes
+    for (const a of t.angles) { bossShot(t.x, t.y, a, 330, 9); bossShot(t.x, t.y, a, 260, 6); }
+  } else if (t.kind === 'ram') {
+    b.charge = { stage: 'down', drop: 0 };
+    playSfx('blast2', 0.1);
+  } else if (t.kind === 'shells') {
+    playSfx('blast1', 0.15);
+    for (const s of t.spots) {
+      spawnExplosion(s.x, s.y, 40);
+      for (let k = 0; k < 10; k++) bossShot(s.x, s.y, k * Math.PI / 5, 110, 5);
+    }
+  }
+}
+
+function killBoss() {
+  spawnWreckage(boss);
+  spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, '#ff4400', 20);
+  spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, '#ffaa00', 16);
+  playSfx('enemy_die1', 0);
+  playSfx('enemy_die2', 0);
+  playSfx('blast1', 0.2); playSfx('blast2', 0.2);   // A1 — layered boss blast
+  duckMusic(0.25, 900);                              // A2
+  addTrauma(1.0);
+  hitStop = 0.09;
+  score += boss.points;
+  // Boss drop: guaranteed power + random HP
+  items.push({ type: 'P', x: boss.x + boss.w/2 - 6, y: boss.y + boss.h/2, w: 12, h: 12, timer: 10 });
+  items.push({ type: 'H', x: boss.x + boss.w/2 + 8, y: boss.y + boss.h/2, w: 12, h: 12, timer: 10 });
+  boss = null; bossSpawned = false;
+  mission++;
+  missionTimer = 0;
+  enemyTimer = 3;
+  if (mission > 3) {
+    // M4 — victory beat, then hand off to name entry
+    victoryPending = true;
+    showMissionCard('MISSION COMPLETE', 'ALL SECTORS CLEARED');
+  } else {
+    // Mission 3 = night theme
+    if (mission === 3) { playMusic('night'); }
+    showMissionCard();   // M2 — intro card for the new mission
+  }
 }
 
 // ========================
@@ -1133,6 +1388,31 @@ function overlap(a, b, pad = 0) {
          a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
 }
 
+function playerHitbox() {
+  return { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 6 };
+}
+
+function hurtPlayer() {
+  player.hp--;
+  player.invincible = 1.5;
+  addTrauma(0.5);
+  playerHitFlash = 1;                                          // J4
+  hitStop = Math.max(hitStop, 0.05);
+  playSfx('player_hit', 0.2);
+  duckMusic(0.45, 300);                                       // A2
+  if (player.hp === 1) playSfx('warning');                    // A5 — low HP alert
+  spawnParticle(player.x + 8, player.y + 7, '#ff0000', 12);
+  spawnDebris(player.x + 8, player.y + 7, '#faa', 5);
+  if (player.hp <= 0) {
+    player.powerLevel = 1;
+    stopHeliLoop();
+    playSfx('heli_stop');
+    if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
+    currentMusic = null;
+    enterNameEntry(false);
+  }
+}
+
 // ========================
 // UPDATE
 // ========================
@@ -1200,7 +1480,7 @@ function update(dt) {
           hit = true; break;
         }
       }
-      if (!hit && boss && overlap(b, { x: boss.x, y: boss.y, w: boss.w, h: boss.h }, 6)) {
+      if (!hit && boss && overlap(b, bossHitbox(boss), 4)) {
         boss.hp--;
         boss.flashTimer = (boss.flashTimer || 0) + 0.06;
         addTrauma(0.12);
@@ -1211,26 +1491,9 @@ function update(dt) {
     }
 
     if (b.owner === 'enemy' && player.invincible <= 0) {
-      if (overlap(b, { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 6 })) {
-        player.hp--;
-        player.invincible = 1.5;
-        addTrauma(0.5);
-        playerHitFlash = 1;                                          // J4
-        hitStop = Math.max(hitStop, 0.05);
-        playSfx('player_hit', 0.2);
-        duckMusic(0.45, 300);                                       // A2
-        if (player.hp === 1) playSfx('warning');                    // A5 — low HP alert
-        spawnParticle(player.x + 8, player.y + 7, '#ff0000', 12);
-        spawnDebris(player.x + 8, player.y + 7, '#faa', 5);
+      if (overlap(b, playerHitbox())) {
         bullets.splice(i, 1);
-        if (player.hp <= 0) {
-          player.powerLevel = 1;
-          stopHeliLoop();
-          playSfx('heli_stop');
-          if (music['battle']) { music['battle'].pause(); music['battle'].currentTime = 0; }
-          currentMusic = null;
-          enterNameEntry(false);
-        }
+        hurtPlayer();
         continue;
       }
     }
@@ -1294,55 +1557,7 @@ function update(dt) {
   }
 
   // Boss
-  if (boss) {
-    boss.phaseTimer += dt;
-    boss.shootTimer -= dt;
-    if (boss.y < 70) boss.y += 60 * dt;
-    else {
-      boss.x += boss.speed * boss.dir * dt;
-      if (boss.x > W - boss.w - 10 || boss.x < 10) boss.dir *= -1;
-    }
-    if (boss.shootTimer <= 0) {
-      boss.shootTimer = boss.phase === 0 ? 1.0 : 0.55;
-      playSfx('boss_shot', 0.1);
-      const angles = boss.phase === 0 ? [-0.35, 0, 0.35] : [-0.6, -0.25, 0, 0.25, 0.6];
-      angles.forEach(a => {
-        const sp = 190;
-        bullets.push({ x: boss.x + boss.w / 2, y: boss.y + boss.h, vx: Math.sin(a) * sp, vy: Math.cos(a) * sp, owner: 'enemy', w: 5, h: 5 });
-      });
-    }
-    if (boss.hp <= 0) {
-      spawnWreckage(boss);
-      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, '#ff4400', 20);
-      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, '#ffaa00', 16);
-      playSfx('enemy_die1', 0);
-      playSfx('enemy_die2', 0);
-      playSfx('blast1', 0.2); playSfx('blast2', 0.2);   // A1 — layered boss blast
-      duckMusic(0.25, 900);                              // A2
-      addTrauma(1.0);
-      hitStop = 0.09;
-      score += boss.points;
-      // Boss drop: guaranteed power + random HP
-      items.push({ type: 'P', x: boss.x + boss.w/2 - 6, y: boss.y + boss.h/2, w: 12, h: 12, timer: 10 });
-      items.push({ type: 'H', x: boss.x + boss.w/2 + 8, y: boss.y + boss.h/2, w: 12, h: 12, timer: 10 });
-      boss = null; bossSpawned = false;
-      mission++;
-      missionTimer = 0;
-      enemyTimer = 3;
-      if (mission > 3) {
-        // M4 — victory beat, then hand off to name entry
-        victoryPending = true;
-        showMissionCard('MISSION COMPLETE', 'ALL SECTORS CLEARED');
-      } else {
-        // Mission 3 = night theme
-        if (mission === 3) { playMusic('night'); }
-        showMissionCard();   // M2 — intro card for the new mission
-      }
-    }
-    if (boss && boss.hp < boss.maxHp * 0.45 && boss.phase === 0) {
-      boss.phase = 1; boss.speed = 80;
-    }
-  }
+  if (boss) updateBoss(dt);
 
   // Items (power-ups)
   for (let i = items.length - 1; i >= 0; i--) {
@@ -1625,46 +1840,7 @@ function draw() {
   });
 
   // Boss
-  if (boss) {
-    const f = boatFrame();
-    // N4 — telegraph: pulsing red glow while winding up to fire
-    if (boss.y >= 70 && boss.shootTimer < 0.45 && boss.shootTimer > 0) {
-      const pulse = (0.45 - boss.shootTimer) / 0.45;
-      ctx.save();
-      ctx.globalAlpha = 0.35 + Math.sin(Date.now() / 40) * 0.15 * pulse;
-      ctx.strokeStyle = '#ff3030';
-      ctx.lineWidth = 2 + pulse * 3;
-      ctx.strokeRect(boss.x - 3, boss.y - 3, boss.w + 6, boss.h + 6);
-      ctx.restore();
-    }
-    drawShadow(boss.x + boss.w / 2, boss.y + boss.h / 2, boss.w, boss.h, 0.3);
-    const bossFlashA = boss.flashTimer > 0 ? Math.min(0.85, boss.flashTimer * 8) : 0;
-    const drawn = drawSprite(`boat4_${f}`, boss.x, boss.y, boss.w, boss.h, false, 0, true, bossFlashA);
-    if (!drawn) {
-      ctx.fillStyle = '#5a3a1a';
-      ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
-    }
-    if (boss.flashTimer > 0) boss.flashTimer = Math.max(0, boss.flashTimer - 0.016);
-    // Fire from damaged boss (phase 1)
-    if (boss.phase === 1) {
-      const ff = fireFrame();
-      drawSprite(`fire2_${ff}`, boss.x + boss.w * 0.1, boss.y + boss.h * 0.1, 32, 32);
-      drawSprite(`fire3_${fireFrame(2)}`, boss.x + boss.w * 0.5, boss.y + boss.h * 0.3, 28, 28);
-    }
-    // Boss HP bar
-    ctx.fillStyle = '#200';
-    ctx.fillRect(10, 10, W - 20, 8);
-    ctx.fillStyle = boss.phase === 0 ? '#d00' : '#f80';
-    ctx.fillRect(10, 10, (W - 20) * (boss.hp / boss.maxHp), 8);
-    ctx.strokeStyle = '#f44';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(10, 10, W - 20, 8);
-    ctx.fillStyle = '#fff';
-    ctx.font = '8px monospace';
-    const bossNames = ['', 'ARMORED GUNBOAT', 'MONITOR WARSHIP', 'RIVER FORTRESS'];
-    const bname = bossNames[mission] || 'BOSS';
-    ctx.fillText(bname, W / 2 - ctx.measureText(bname).width / 2, 17);
-  }
+  if (boss) drawBoss();
 
   // Enemy bullets
   bullets.forEach(b => {
@@ -1867,6 +2043,129 @@ function drawMissionCard() {
     ctx.fillText(missionCardSub, W / 2 - ctx.measureText(missionCardSub).width / 2, cy + 22);
   }
   ctx.restore();
+}
+
+const BOSS_NAMES = ['', 'ARMORED GUNBOAT', 'MONITOR WARSHIP', 'RIVER FORTRESS'];
+
+// Big-attack telegraphs — READABLE: show exactly where it will land
+function drawBossTele(b) {
+  const t = b.tele;
+  const k = 1 - t.t / t.dur;                       // 0 → 1 as it winds up
+  const blink = 0.75 + Math.sin(Date.now() / 45) * 0.25;
+  ctx.save();
+  if (t.kind === 'lanes') {
+    ctx.strokeStyle = '#ff3030';
+    ctx.lineWidth = 1 + k * 4;
+    ctx.globalAlpha = (0.25 + k * 0.55) * blink;
+    ctx.setLineDash([8, 6]);
+    for (const a of t.angles) {
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y);
+      ctx.lineTo(t.x + Math.cos(a) * 700, t.y + Math.sin(a) * 700);
+      ctx.stroke();
+    }
+  } else if (t.kind === 'ram') {
+    const lw = b.w * 0.46, top = b.y + b.h * 0.8;
+    ctx.globalAlpha = (0.12 + k * 0.25) * blink;
+    ctx.fillStyle = '#ff2020';
+    ctx.fillRect(t.x - lw / 2, top, lw, H - top);
+    ctx.globalAlpha = 0.5 + k * 0.4;
+    ctx.strokeStyle = '#ff4040';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(t.x - lw / 2, top, lw, H - top);
+    // Chevrons racing down the lane
+    ctx.fillStyle = '#ffd0d0';
+    const off = (Date.now() / 4) % 40;
+    for (let y = top + off; y < H; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(t.x - 9, y); ctx.lineTo(t.x, y + 8); ctx.lineTo(t.x + 9, y);
+      ctx.lineTo(t.x + 9, y + 4); ctx.lineTo(t.x, y + 12); ctx.lineTo(t.x - 9, y + 4);
+      ctx.fill();
+    }
+  } else if (t.kind === 'shells') {
+    ctx.strokeStyle = '#ff3030';
+    ctx.fillStyle = '#ff2020';
+    for (const s of t.spots) {
+      const r = 34 - k * 20;
+      ctx.globalAlpha = 0.15 + k * 0.25;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = (0.5 + k * 0.5) * blink;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(s.x - 18, s.y); ctx.lineTo(s.x - 6, s.y);
+      ctx.moveTo(s.x + 6, s.y);  ctx.lineTo(s.x + 18, s.y);
+      ctx.moveTo(s.x, s.y - 18); ctx.lineTo(s.x, s.y - 6);
+      ctx.moveTo(s.x, s.y + 6);  ctx.lineTo(s.x, s.y + 18);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawBoss() {
+  const b = boss, f = boatFrame();
+  if (b.tele) drawBossTele(b);
+  // N4 — telegraph: pulsing red glow while winding up a volley
+  const volley = b.kind === 'fortress' || b.phase === 0;
+  if (b.entered && volley && b.shootTimer < 0.45 && b.shootTimer > 0) {
+    const pulse = (0.45 - b.shootTimer) / 0.45;
+    const hb = bossHitbox(b);
+    ctx.save();
+    ctx.globalAlpha = 0.35 + Math.sin(Date.now() / 40) * 0.15 * pulse;
+    ctx.strokeStyle = '#ff3030';
+    ctx.lineWidth = 2 + pulse * 3;
+    ctx.strokeRect(hb.x - 3, hb.y - 3, hb.w + 6, hb.h + 6);
+    ctx.restore();
+  }
+  drawShadow(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0.3);
+  const flashA = b.flashTimer > 0 ? Math.min(0.85, b.flashTimer * 8) : 0;
+  const drawn = drawSprite(`${b.sprite}_${f}`, b.x, b.y, b.w, b.h, false, 0, true, flashA);
+  if (!drawn) {
+    ctx.fillStyle = '#5a3a1a';
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+  }
+  // Turrets track their target so the player can read where fire comes from
+  const turrets = bossTurrets(b);
+  const tKey = b.kind === 'monitor' ? 'turret_m' : 'turret_f';
+  const tSize = b.kind === 'monitor' ? 44 : 64;
+  const img = imgs[tKey];
+  if (ready(tKey)) turrets.forEach((g, i) => {
+    let a = aimAt(g.x, g.y);
+    if (b.kind === 'fortress' && i === 1) a = b.phase === 0 ? b.sweep : b.spin;
+    // Pivot on the turret body (upper third of the sprite), barrel points along a
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.rotate(a - Math.PI / 2);
+    ctx.drawImage(img, -tSize / 2, -tSize * 0.3, tSize, tSize);
+    if (flashA > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = flashA;
+      ctx.drawImage(img, -tSize / 2, -tSize * 0.3, tSize, tSize);
+    }
+    ctx.restore();
+  });
+  if (b.flashTimer > 0) b.flashTimer = Math.max(0, b.flashTimer - 0.016);
+  // Fire from damaged boss (phase 2)
+  if (b.phase === 1) {
+    drawSprite(`fire2_${fireFrame()}`, b.x + b.w * 0.18, b.y + b.h * 0.14, 32, 32);
+    drawSprite(`fire3_${fireFrame(2)}`, b.x + b.w * 0.52, b.y + b.h * 0.34, 28, 28);
+  }
+  // Boss HP bar
+  ctx.fillStyle = '#200';
+  ctx.fillRect(10, 10, W - 20, 8);
+  ctx.fillStyle = b.phase === 0 ? '#d00' : '#f80';
+  ctx.fillRect(10, 10, (W - 20) * Math.max(0, b.hp / b.maxHp), 8);
+  ctx.strokeStyle = '#f44';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(10, 10, W - 20, 8);
+  // Phase-2 threshold notch
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(10 + (W - 20) * 0.5, 7, 1, 3);
+  ctx.fillRect(10 + (W - 20) * 0.5, 18, 1, 3);
+  ctx.font = '8px monospace';
+  const bname = BOSS_NAMES[mission] || 'BOSS';
+  ctx.fillText(bname, W / 2 - ctx.measureText(bname).width / 2, 17);
 }
 
 // M3 — flashing WARNING banner when a boss approaches
