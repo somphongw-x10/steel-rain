@@ -66,7 +66,11 @@
 - ✅ ข้อ 4 screen shake + hit-stop, ข้อ 5 enemy bullet patterns — เสร็จ
 - ✅ ข้อ 7 Difficulty modes (Easy/Normal/Hard) — เสร็จ (Milestone 1)
 - ✅ ข้อ 8 Tutorial hints — เสร็จ (Milestone 1)
-- ⏳ เหลือ: ข้อ 6 boss variety, ข้อ 9 mission แยกชัด, ข้อ 10 meta/retention
+- ✅ ข้อ 6 Boss variety — เสร็จ (2026-10-15): บอสต่างกันทั้ง 3 mission, 2 เฟส (เปลี่ยนที่ 50% HP: ล้างกระสุน + ระเบิด + ป้าย PHASE 2), telegraph ก่อนท่าใหญ่
+  - M1 ARMORED GUNBOAT (Boat4) — ลาดตระเวนซ้าย-ขวาเร็ว · เฟส 1 ยิงกระจุก 3 นัดเล็ง player · เฟส 2 spiral 2 แขน + ตอร์ปิโด 3 เลน (เส้นประแดงเตือน 0.8s)
+  - M2 MONITOR WARSHIP (Boat2 + ป้อม Cannon4 หัว/ท้าย) — ส่ายช้า · เฟส 1 ป้อมสลับยิงคู่ + วงแหวน 14 นัดช้า · เฟส 2 พุ่งชน (เลนแดง + ลูกศรเตือน 1.0s, ชนตัวเรือเสีย HP) + ป้อมยิง fan 3
+  - M3 RIVER FORTRESS (Boat3 เทา + ป้อม Cannon1 ×3) — แทบอยู่กับที่ · เฟส 1 ป้อมกลางกวาดม่านกระสุน + ป้อมข้างยิงเล็ง · เฟส 2 ปืนใหญ่ 3 เป้า (วงเล็งหดเข้า 1.0s แล้วระเบิดเป็นวง 10 นัด) + spiral 3 แขน
+- ⏳ เหลือ: ข้อ 9 mission แยกชัด, ข้อ 10 meta/retention
 - 📌 GameMonetize ปฏิเสธเกม AI ทั้งหมด (นโยบายใหม่) → เป้าหมายใหม่: Poki/CrazyGames/GameDistribution
 
 ## ลำดับความสำคัญที่แนะนำให้ทำก่อน
